@@ -3,7 +3,7 @@ Operations Intelligence engine Utilities and Shared Packages
 
 ## utils
 
-### utils/buildAncestry
+### utils/buildAncestry.go
 Given a full file path to a file and the root of the monitoring path, create an array containing the full path names of parents and an array of those parent's hashes.
 
 ```
@@ -29,7 +29,7 @@ WatchRoot =: /Users/greghacke/Library/CloudStorage/Dropbox-RSKGroup
 ]
 ```
 
-### utils/flattenJson
+### utils/flattenJson.go
 This is a fork of the https://pkg.go.dev/github.com/pushrax/flatjson package and will be modified as necessary.
 #### Types
 ##### type Map
@@ -37,11 +37,11 @@ This is a fork of the https://pkg.go.dev/github.com/pushrax/flatjson package and
 ##### func Flatten
 `func Flatten(val interface{}) Map`
 
-### utils/fsnotify
+### utils/fsnotify/fsnotify.go
 Drawn from `github.com/fsnotify/fsnotify` to perform watcher functions. Note we thread through fsnotify to create watchers for each subfolder at initiation.
 
-### utils/mongoWrite
+### utils/mongoWrite.go
 Drawn from our exiting mongoDB solutions, this package in turn leverages `go.mongodb.org/mongo-driver/mongo` and `go.mongodb.org/mongo-driver/mongo/options` to properly marshal our content into a functional form and write it to MongoDB
 
-### utils/solrWrite
+### utils/solrWrite.go
 Drawn from our exiting mongoDB solutions, this package in turn leverages `github.com/vanng822/go-solr` to properly marshal our content into a functional form and write it to MongoDB
