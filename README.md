@@ -37,6 +37,9 @@ This is a fork of the https://pkg.go.dev/github.com/pushrax/flatjson package and
 ##### func Flatten
 `func Flatten(val interface{}) Map`
 
+### utils/fsnotify
+Drawn from `github.com/fsnotify/fsnotify` to perform watcher functions. Note we thread through fsnotify to create watchers for each subfolder at initiation.
+
 ### utils/mongoWrite
 Drawn from our exiting mongoDB solutions, this package in turn leverages `go.mongodb.org/mongo-driver/mongo` and `go.mongodb.org/mongo-driver/mongo/options` to properly marshal our content into a functional form and write it to MongoDB
 
