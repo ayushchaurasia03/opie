@@ -28,6 +28,11 @@ WatchRoot =: /Users/greghacke/Library/CloudStorage/Dropbox-RSKGroup
 	"2ab67b608e7613dba96eda7ac310108cc9e4b645"
 ]
 ```
+### utils/getFileData.go
+This utility is designed to get the file data from the file system using LStat and FileInfo from the default Go Packages
+
+### utils/getFileExifData.go
+This utility calls the OS-installed EXIFTOOL to gather additional exif data based on the file extension
 
 ### utils/flattenJson.go
 This is a fork of the https://pkg.go.dev/github.com/pushrax/flatjson package and will be modified as necessary.
