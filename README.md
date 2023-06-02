@@ -28,6 +28,9 @@ WatchRoot =: /Users/greghacke/Library/CloudStorage/Dropbox-RSKGroup
 	"2ab67b608e7613dba96eda7ac310108cc9e4b645"
 ]
 ```
+### utils/getConfig.go
+This utility will load the config.json into memory
+
 ### utils/getFileData.go
 This utility is designed to get the file data from the file system using LStat and FileInfo from the default Go Packages
 
