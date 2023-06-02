@@ -3,7 +3,7 @@ Operations Intelligence engine Utilities and Shared Packages
 
 ## utils
 
-### utils/buildAncestry.go
+### utils/buildAncestry
 Given a full file path to a file and the root of the monitoring path, create an array containing the full path names of parents and an array of those parent's hashes.
 
 ```
@@ -28,16 +28,16 @@ WatchRoot =: /Users/greghacke/Library/CloudStorage/Dropbox-RSKGroup
 	"2ab67b608e7613dba96eda7ac310108cc9e4b645"
 ]
 ```
-### utils/getConfig.go
+### utils/getConfig
 This utility will load the config.json into memory
 
-### utils/getFileData.go
+### utils/getFileData
 This utility is designed to get the file data from the file system using LStat and FileInfo from the default Go Packages
 
-### utils/getFileExifData.go
+### utils/getFileExifData
 This utility calls the OS-installed EXIFTOOL to gather additional exif data based on the file extension
 
-### utils/flattenJson.go
+### utils/flatJson
 This is a fork of the https://pkg.go.dev/github.com/pushrax/flatjson package and will be modified as necessary.
 #### Types
 ##### type Map
@@ -45,11 +45,11 @@ This is a fork of the https://pkg.go.dev/github.com/pushrax/flatjson package and
 ##### func Flatten
 `func Flatten(val interface{}) Map`
 
-### utils/fsnotify/fsnotify.go
+### utils/fsnotify/fsnotify
 Drawn from `github.com/fsnotify/fsnotify` to perform watcher functions. Note we thread through fsnotify to create watchers for each subfolder at initiation.
 
-### utils/mongoWrite.go
+### utils/mongoWrite
 Drawn from our exiting mongoDB solutions, this package in turn leverages `go.mongodb.org/mongo-driver/mongo` and `go.mongodb.org/mongo-driver/mongo/options` to properly marshal our content into a functional form and write it to MongoDB
 
-### utils/solrWrite.go
+### utils/solrWrite
 Drawn from our exiting mongoDB solutions, this package in turn leverages `github.com/vanng822/go-solr` to properly marshal our content into a functional form and write it to MongoDB
