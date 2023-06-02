@@ -38,12 +38,7 @@ This utility is designed to get the file data from the file system using LStat a
 This utility calls the OS-installed EXIFTOOL to gather additional exif data based on the file extension
 
 ### utils/flatJson
-This is a fork of the https://pkg.go.dev/github.com/pushrax/flatjson package and will be modified as necessary.
-#### Types
-##### type Map
-`type Map map[string]interface{}`
-##### func Flatten
-`func Flatten(val interface{}) Map`
+This is a fork of the [https://pkg.go.dev/github.com/pushrax/flatjson](https://pkg.go.dev/github.com/cameronnewman/go-flatten) package and will be modified as necessary.
 
 ### utils/fsnotify/fsnotify
 Drawn from `github.com/fsnotify/fsnotify` to perform watcher functions. Note we thread through fsnotify to create watchers for each subfolder at initiation.
