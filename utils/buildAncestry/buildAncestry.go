@@ -13,8 +13,8 @@ var (
 )
 
 func init() {
-	file = flag.String("file", "/pat/to/your/file/name.txt", "full file path")
-	root = flag.String("root", "/pat/to/your/file/", "root path")
+	file = flag.String("file", "/path/to/your/file/name.txt", "full file path")
+	root = flag.String("root", "/path", "root path")
 }
 
 func main() {
@@ -42,15 +42,15 @@ func getPathsBetween(file, root string) []string {
 	return paths
 }
 
-func createHashes(strs []string) map[string]string {
-	hashes := make(map[string]string)
+func createHashes(strs []string) []string {
+	var hashes []string
 
 	for _, str := range strs {
 		hash := sha1.New()
 		hash.Write([]byte(str))
 		sha1Hash := fmt.Sprintf("%x", hash.Sum(nil))
 
-		hashes[str] = sha1Hash
+		hashes = append(hashes, sha1Hash)
 	}
 
 	return hashes
