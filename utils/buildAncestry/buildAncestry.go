@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha1"
 	"flag"
 	"fmt"
 	"path/filepath"
@@ -22,7 +23,7 @@ func main() {
 	rootValue := *root
 
 	paths := getPathsBetween(fileValue, rootValue)
-	hashes := getHashes(paths)
+	hashes := createHashes(paths)
 	fmt.Println(paths)
 	fmt.Println(hashes)
 }
@@ -32,21 +33,24 @@ func getPathsBetween(file, root string) []string {
 
 	for {
 		file = filepath.Dir(file)
+		paths = append(paths, file)
 		if file == root {
 			break
 		}
-		paths = append(paths, file)
 	}
 
 	return paths
 }
 
-func getHashes(paths []string) []string {
-	var hashes []string
+func createHashes(strs []string) map[string]string {
+	hashes := make(map[string]string)
 
-	for _, path := range paths {
+	for _, str := range strs {
+		hash := sha1.New()
+		hash.Write([]byte(str))
+		sha1Hash := fmt.Sprintf("%x", hash.Sum(nil))
 
-		hashes = append(hashes, path)
+		hashes[str] = sha1Hash
 	}
 
 	return hashes
