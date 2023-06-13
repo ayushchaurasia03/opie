@@ -1,0 +1,22 @@
+{
+  "DbType": "mongodb",
+  "Host": "localhost",
+  "Port": "27017",
+  "DbUser": "localAdmin",
+  "DbPwd": "Army89Run!",
+  "DbName": "sopie",
+  "FileColl": "files",
+  "TreeColl": "trees",
+  "NoExif": [
+    "dmg",
+    "app",
+    "json",
+    "exe"
+  ],
+  "Watcher": [
+    "/path/to/watch",
+    "/second/path/to/watch",
+    "/additional/path/to/watch",
+    "/new/directory"
+  ]
+}
