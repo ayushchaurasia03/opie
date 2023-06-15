@@ -9,6 +9,9 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -16,59 +19,20 @@ import (
 )
 
 var path *string
-var fileExifJson map[string]interface{}
-
-type Configuration struct {
-	DbType   string `json:"DbType"`
-	Host     string `json:"Host"`
-	Port     string `json:"Port"`
-	DbUser   string `json:"DbUser"`
-	DbPwd    string `json:"DbPwd"`
-	DbName   string `json:"DbName"`
-	FileColl string `json:"FileColl"`
-	TreeColl string `json:"TreeColl"`
-}
+var fileCollection *mongo.Collection
 
 type FileData struct {
-	IsDirectory         bool   `json:"IsDirectory"`
-	FileSizeRaw         int64  `json:"FileSizeRaw"`
-	FileHash            string `json:"FileHash"`
-	SourceFileHash      string `json:"SourceFileHash"`
-	DirectoryHash       string `json:"DirectoryHash"`
-	FileContent         []byte `json:"FileContent,omitempty"`
-	FileInodeChangeDate string `json:"FileInodeChangeDate"`
-	FileSize            string `json:"FileSize"`
-	FileType            string `json:"FileType"`
-	MIMEType            string `json:"MIMEType"`
-	WordCount           int    `json:"WordCount"`
-	FilePermissions     string `json:"FilePermissions"`
-	LineCount           int    `json:"LineCount"`
-	MIMEEncoding        string `json:"MIMEEncoding"`
-	ExifToolVersion     string `json:"ExifToolVersion"`
-	FileAccessDate      string `json:"FileAccessDate"`
-	FileName            string `json:"FileName"`
-	FileTypeExtension   string `json:"FileTypeExtension"`
-	SourceFile          string `json:"SourceFile"`
-	Directory           string `json:"Directory"`
-	FileModifyDate      string `json:"FileModifyDate"`
-	Newlines            string `json:"Newlines"`
-}
-
-type DirectoryData struct {
-	IsDirectory       bool        `json:"IsDirectory"`
-	SourceFile        string      `json:"SourceFile"`
-	SourceFileHash    string      `json:"SourceFileHash"`
-	Directory         string      `json:"Directory"`
-	DirectoryHash     string      `json:"DirectoryHash"`
-	FileModifyDate    time.Time   `json:"FileModifyDate"`
-	FilePermissions   os.FileMode `json:"FilePermissions"`
-	FileSizeRaw       int64       `json:"FileSizeRaw"`
-	FileTypeExtension string      `json:"FileTypeExtension"`
-	IsRoot            bool        `json:"IsRoot"`
-	RootDirectoryName string      `json:"RootDirectoryName"`
-	TotalSize         int64       `json:"TotalSize"`
-	Directories       int         `json:"Directories"`
-	Files             int         `json:"Files"`
+	IsDirectory     bool   `json:"IsDirectory"`
+	FileSizeRaw     int64  `json:"FileSizeRaw"`
+	FileHash        string `json:"FileHash"`
+	SourceFileHash  string `json:"SourceFileHash"`
+	DirectoryHash   string `json:"DirectoryHash"`
+	FilePermissions string `json:"FilePermissions"` // Updated to string type
+	FileName        string `json:"FileName"`
+	SourceFile      string `json:"SourceFile"`
+	Directory       string `json:"Directory"`
+	FileModifyDate  string `json:"FileModifyDate"`
+	ExiftoolVersion string `json:"ExiftoolVersion"`
 }
 
 func init() {
@@ -93,9 +57,45 @@ func computeFileHash(filePath string) (string, error) {
 	return hashValue, nil
 }
 
-func connectToMongoDB(dbType, host, port, dbUser, dbPwd, dbName, collectionName string) (*mongo.Client, *mongo.Collection, context.Context, error) {
+func computeDirectoryHash(path string) (string, error) {
+	hash := sha1.New()
+
+	err := filepath.Walk(path, func(filePath string, fileInfo os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if fileInfo.IsDir() {
+			return nil
+		}
+
+		// Compute file hash and update the hash object
+		fileHash, err := computeFileHash(filePath)
+		if err != nil {
+			return err
+		}
+		_, err = hash.Write([]byte(fileHash))
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	hashBytes := hash.Sum(nil)
+	hashValue := hex.EncodeToString(hashBytes)
+
+	return hashValue, nil
+}
+
+func connectToMongoDB(dbType, host, port, dbUser, dbPwd, dbName, collectionName string) error {
 	// Construct MongoDB connection URI
-	mongodbURI := dbType + "://" + dbUser + ":" + dbPwd + "@" + host + ":" + port
+	mongodbURI := dbType + "://" + host + ":" + port
 
 	// Configure the client connection
 	clientOptions := options.Client().ApplyURI(mongodbURI)
@@ -103,112 +103,232 @@ func connectToMongoDB(dbType, host, port, dbUser, dbPwd, dbName, collectionName 
 	// Connect to MongoDB
 	client, err := mongo.Connect(context.Background(), clientOptions)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to connect to MongoDB: %v", err)
+		return fmt.Errorf("failed to connect to MongoDB: %v", err)
 	}
 
 	// Check if the connection was successful
 	err = client.Ping(context.Background(), nil)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to ping MongoDB: %v", err)
+		return fmt.Errorf("failed to ping MongoDB: %v", err)
 	}
 
 	// Access the specified database and collection
 	db := client.Database(dbName)
-	collection := db.Collection(collectionName)
-
-	// Create a context with a 15-second timeout
-	ctx, _ := context.WithTimeout(context.Background(), 15*time.Second)
-
-	return client, collection, ctx, nil
-}
-
-func insertFileDataIntoMongoDB(data FileData, collection *mongo.Collection, ctx context.Context) error {
-	insertResult, err := collection.InsertOne(ctx, data)
-	if err != nil {
-		return fmt.Errorf("failed to insert file data into MongoDB FILEEE: %v", err)
-	}
-
-	fmt.Println("Inserted document ID:", insertResult.InsertedID)
+	fileCollection = db.Collection(collectionName)
 
 	return nil
 }
 
-func insertDirectoryDataIntoMongoDB(data DirectoryData, collection *mongo.Collection, ctx context.Context) error {
-
-	insertResult, err := collection.InsertOne(ctx, data)
-	fmt.Println("Inserted document ID:", insertResult)
-
+func insertFileDataIntoMongoDB(data FileData) error {
+	_, err := fileCollection.InsertOne(context.Background(), data)
 	if err != nil {
-		return fmt.Errorf("failed to insert directory data into MongoDB DIRECTORYYYYYY: %v", err)
+		return fmt.Errorf("failed to insert file data into MongoDB: %v", err)
 	}
-
-	fmt.Println("Inserted document ID:", insertResult.InsertedID)
 
 	return nil
-}
-
-func main() {
-	// Capture and string-ify path
-	flag.Parse()
-	basePath := *path
-
-	// Read the directory
-	err := readDirectory(basePath)
-	if err != nil {
-		fmt.Printf("Error reading directory: %s\n", err)
-		os.Exit(1)
-	}
 }
 
 func readDirectory(path string) error {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		fmt.Printf("Error reading directory: %s\n", err)
-		return nil
+		return fmt.Errorf("error reading directory: %s", err)
 	}
 
 	for _, file := range files {
-		filePath := path + "/" + file.Name()
+		filePath := filepath.Join(path, file.Name())
 
 		if file.IsDir() {
-			if err := readDirectory(filePath); err != nil {
-				fmt.Printf("Error reading directory %s: %s\n", filePath, err)
-			} else {
-				fileValue := filePath
-				fsName := file.Name()
-				rawSize := file.Size()
-				fsMode := file.Mode()
-				fsModTime := file.ModTime()
-				isDirectory := file.IsDir()
-				fsSys := file.Sys()
-
-				fmt.Println("Source File:", fileValue)
-				fmt.Println("File Name:", fsName)
-				fmt.Println("File Size:", rawSize)
-				fmt.Println("File Mode:", fsMode)
-				fmt.Println("File ModTime:", fsModTime)
-				fmt.Println("File IsDir:", isDirectory)
-				fmt.Println("File Sys:", fsSys)
+			dirHash, err := computeDirectoryHash(filePath)
+			if err != nil {
+				fmt.Printf("Error computing directory hash: %v\n", err)
+				continue
 			}
 
-		} else {
-			fileValue := filePath
-			fsName := file.Name()
-			rawSize := file.Size()
-			fsMode := file.Mode()
-			fsModTime := file.ModTime()
-			isDirectory := file.IsDir()
-			fsSys := file.Sys()
+			dirData := FileData{
+				IsDirectory:     true,
+				FileSizeRaw:     0,  // Set file size to 0 for directories
+				FileHash:        "", // Set file hash to empty string for directories
+				SourceFileHash:  "", // Set source file hash to empty string for directories
+				DirectoryHash:   dirHash,
+				FilePermissions: getPermissions(file.Mode()), // Convert file permissions to string
+				FileName:        file.Name(),
+				SourceFile:      filePath,
+				Directory:       path,
+				FileModifyDate:  file.ModTime().Format(time.RFC3339),
+				ExiftoolVersion: getExiftoolVersion(),
+			}
 
-			fmt.Println("Source File:", fileValue)
-			fmt.Println("File Name:", fsName)
-			fmt.Println("File Size:", rawSize)
-			fmt.Println("File Mode:", fsMode)
-			fmt.Println("File ModTime:", fsModTime)
-			fmt.Println("File IsDir:", isDirectory)
-			fmt.Println("File Sys:", fsSys)
+			err = insertFileDataIntoMongoDB(dirData)
+			if err != nil {
+				fmt.Printf("Error inserting directory data into MongoDB: %v\n", err)
+			}
+
+			err = readDirectory(filePath)
+			if err != nil {
+				fmt.Printf("Error reading directory %s: %v\n", filePath, err)
+			}
+		} else {
+			fileHash, err := computeFileHash(filePath)
+			if err != nil {
+				fmt.Printf("Error computing file hash: %v\n", err)
+				continue
+			}
+
+			fileData := FileData{
+				IsDirectory:     false,
+				FileSizeRaw:     file.Size(),
+				FileHash:        fileHash,
+				SourceFileHash:  fileHash,                    // Set source file hash to file hash for files
+				DirectoryHash:   "",                          // Set directory hash to empty string for files
+				FilePermissions: getPermissions(file.Mode()), // Convert file permissions to string
+				FileName:        file.Name(),
+				SourceFile:      filePath,
+				Directory:       filepath.Dir(filePath), // Update to save the parent directory instead of the root directory
+				FileModifyDate:  file.ModTime().Format(time.RFC3339),
+				ExiftoolVersion: getExiftoolVersion(),
+			}
+
+			// Extract and save Exiftool data for files
+			exiftoolData, err := extractExiftoolData(filePath)
+			if err != nil {
+				fmt.Printf("Error extracting Exiftool data for file %s: %v\n", filePath, err)
+			} else {
+				fileData.ExiftoolVersion = exiftoolData
+			}
+
+			err = insertFileDataIntoMongoDB(fileData)
+			if err != nil {
+				fmt.Printf("Error inserting file data into MongoDB: %v\n", err)
+			}
 		}
 	}
 
 	return nil
+}
+
+func getExiftoolVersion() string {
+	cmd := exec.Command("exiftool", "-ver")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("Error getting exiftool version: %v\n", err)
+		return ""
+	}
+
+	return strings.TrimSpace(string(output))
+}
+
+// Function to extract Exiftool data for a file
+func extractExiftoolData(filePath string) (string, error) {
+	cmd := exec.Command("exiftool", "-j", filePath)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to extract Exiftool data: %v", err)
+	}
+
+	return string(output), nil
+}
+
+// Function to convert file permissions to r-w format
+func getPermissions(perm os.FileMode) string {
+	permStr := ""
+
+	if perm&os.ModePerm == 0 {
+		return "no access"
+	}
+
+	if perm&os.ModeDir != 0 {
+		permStr += "d"
+	} else {
+		permStr += "-"
+	}
+
+	// Owner permissions
+	if perm&0400 != 0 {
+		permStr += "r"
+	} else {
+		permStr += "-"
+	}
+
+	if perm&0200 != 0 {
+		permStr += "w"
+	} else {
+		permStr += "-"
+	}
+
+	if perm&0100 != 0 {
+		permStr += "x"
+	} else {
+		permStr += "-"
+	}
+
+	// Group permissions
+	if perm&0040 != 0 {
+		permStr += "r"
+	} else {
+		permStr += "-"
+	}
+
+	if perm&0020 != 0 {
+		permStr += "w"
+	} else {
+		permStr += "-"
+	}
+
+	if perm&0010 != 0 {
+		permStr += "x"
+	} else {
+		permStr += "-"
+	}
+
+	// Other permissions
+	if perm&0004 != 0 {
+		permStr += "r"
+	} else {
+		permStr += "-"
+	}
+
+	if perm&0002 != 0 {
+		permStr += "w"
+	} else {
+		permStr += "-"
+	}
+
+	if perm&0001 != 0 {
+		permStr += "x"
+	} else {
+		permStr += "-"
+	}
+
+	return permStr
+}
+
+func main() {
+	// MongoDB configuration
+	dbType := "mongodb"
+	dbHost := "localhost"
+	dbPort := "27017"
+	dbUser := "your-username"
+	dbPwd := "your-password"
+	dbName := "sopie"
+	collectionName := "files"
+
+	// Connect to MongoDB
+	err := connectToMongoDB(dbType, dbHost, dbPort, dbUser, dbPwd, dbName, collectionName)
+	if err != nil {
+		fmt.Printf("Error connecting to MongoDB: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Capture and stringify path
+	flag.Parse()
+	basePath := *path
+
+	// Read the directory
+	err = readDirectory(basePath)
+	if err != nil {
+		fmt.Printf("Error reading directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Directory and file data successfully inserted into MongoDB!")
 }
