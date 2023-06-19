@@ -109,7 +109,7 @@ func computeDirectoryHash(path string, parentDirHash string) (string, error) {
 
 func connectToMongoDB(dbType, host, port, dbUser, dbPwd, dbName, collectionName string) error {
 	// Construct MongoDB connection URI
-	mongodbURI := dbType + "://" + host + ":" + port
+	mongodbURI := dbType + "://" + dbUser + ":" + dbPwd + "@" + host + ":" + port
 
 	// Configure the client connection
 	clientOptions := options.Client().ApplyURI(mongodbURI)
@@ -329,8 +329,8 @@ func main() {
 	dbType := "mongodb"
 	dbHost := "localhost"
 	dbPort := "27017"
-	dbUser := "your-username"
-	dbPwd := "your-password"
+	dbUser := "localAdmin"
+	dbPwd := "Army89Run!"
 	dbName := "sopie"
 	collectionName := "files"
 
