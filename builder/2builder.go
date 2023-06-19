@@ -209,20 +209,22 @@ func compileDirectoryData(pathValue string) string {
 	UUID := sourcePathHash + ":" + directoryHash
 
 	fmt.Println("_id:", UUID)
-	fmt.Println("Source File:", pathValue)
-	fmt.Println("File Name:", fileInfo.Name())
-	fmt.Println("File Size:", sizeStr)
-	fmt.Println("File Mode:", modeStr)
-	fmt.Println("File Mod Time:", modTimeStr)
+	fmt.Println("SourceFile:", pathValue)
+	fmt.Println("Diretory:", directoryPathValue)
+	fmt.Println("FileName:", fileInfo.Name())
+	fmt.Println("fsSizeRaw:", sizeStr)
+	fmt.Println("fsMode:", modeStr)
+	fmt.Println("fsModTime:", modTimeStr)
 	fmt.Println("isDirectory:", "true")
 	fmt.Println("sourcePathHash:", sourcePathHash)
 	fmt.Println("directoryHash:", directoryHash)
 
 	dirInfo := struct {
 		_id            string
-		sourceFile     string
-		fileName       string
-		fileSize       string
+		SourceFile     string
+		Diretory       string
+		FileName       string
+		fsSizeRaw      string
 		fileMode       string
 		fileModTime    string
 		isDirectory    string
@@ -230,9 +232,10 @@ func compileDirectoryData(pathValue string) string {
 		directoryHash  string
 	}{
 		_id:            UUID,
-		sourceFile:     pathValue,
-		fileName:       fileInfo.Name(),
-		fileSize:       sizeStr,
+		SourceFile:     pathValue,
+		Diretory:       directoryPathValue,
+		FileName:       fileInfo.Name(),
+		fsSizeRaw:      sizeStr,
 		fileMode:       modeStr,
 		fileModTime:    modTimeStr,
 		isDirectory:    "true",
@@ -241,7 +244,7 @@ func compileDirectoryData(pathValue string) string {
 	}
 
 	// Marshal outbound json
-	fileJson, errMar := json.MarshalIndent(dirInfo, "", "  ")
+	fileJson, errMar := json.MarshalIndent(&dirInfo, "", "  ")
 	if errMar != nil {
 		fmt.Printf("err - %v\n", errMar)
 	}
