@@ -22,13 +22,13 @@ func main() {
 	fileValue := *file
 	rootValue := *root
 
-	paths := getPathsBetween(fileValue, rootValue)
-	hashes := createHashes(paths)
+	paths := ancestorPaths(fileValue, rootValue)
+	hashes := ancestorHashes(paths)
 	fmt.Println(paths)
 	fmt.Println(hashes)
 }
 
-func getPathsBetween(file, root string) []string {
+func ancestorPaths(file, root string) []string {
 	var paths []string
 
 	for {
@@ -42,7 +42,7 @@ func getPathsBetween(file, root string) []string {
 	return paths
 }
 
-func createHashes(strs []string) []string {
+func ancestorHashes(strs []string) []string {
 	var hashes []string
 
 	for _, str := range strs {
