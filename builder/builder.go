@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -22,21 +24,23 @@ var path *string
 var fileCollection *mongo.Collection
 
 type FileData struct {
-	IsDirectory     bool   `json:"IsDirectory"`
-	FileSizeRaw     int64  `json:"FileSizeRaw"`
-	FileHash        string `json:"FileHash"`
-	SourceFileHash  string `json:"SourceFileHash"`
-	DirectoryHash   string `json:"DirectoryHash"`
-	FilePermissions string `json:"FilePermissions"` // Updated to string type
-	FileName        string `json:"FileName"`
-	SourceFile      string `json:"SourceFile"`
-	Directory       string `json:"Directory"`
-	FileModifyDate  string `json:"FileModifyDate"`
-	ExiftoolVersion string `json:"ExiftoolVersion"`
+	ID              string                 `json:"_id,omitempty"`
+	IsDirectory     bool                   `json:"IsDirectory"`
+	FileSizeRaw     int64                  `json:"FileSizeRaw"`
+	FileHash        string                 `json:"FileHash"`
+	SourceFileHash  string                 `json:"SourceFileHash"`
+	DirectoryHash   string                 `json:"DirectoryHash"`
+	FilePermissions string                 `json:"FilePermissions"`
+	FileName        string                 `json:"FileName"`
+	SourceFile      string                 `json:"SourceFile"`
+	Directory       string                 `json:"Directory"`
+	FileModifyDate  string                 `json:"FileModifyDate"`
+	ExiftoolVersion string                 `json:"ExiftoolVersion"`
+	ExiftoolData    map[string]interface{} `json:"ExiftoolData"` // New field for Exiftool data
 }
 
 func init() {
-	path = flag.String("path", "/home/delimp/Documents/project-phi", "full path")
+	path = flag.String("path", "/home/delimp/Documents/test", "full path")
 }
 
 func computeFileHash(filePath string) (string, error) {
@@ -57,7 +61,7 @@ func computeFileHash(filePath string) (string, error) {
 	return hashValue, nil
 }
 
-func computeDirectoryHash(path string) (string, error) {
+func computeDirectoryHash(path string, parentDirHash string) (string, error) {
 	hash := sha1.New()
 
 	err := filepath.Walk(path, func(filePath string, fileInfo os.FileInfo, err error) error {
@@ -72,6 +76,16 @@ func computeDirectoryHash(path string) (string, error) {
 
 		// Compute file hash and update the hash object
 		fileHash, err := computeFileHash(filePath)
+		if err != nil {
+			return err
+		}
+
+		// Include file path, name, and hash in the directory hash computation
+		_, err = hash.Write([]byte(filePath))
+		if err != nil {
+			return err
+		}
+		_, err = hash.Write([]byte(fileInfo.Name()))
 		if err != nil {
 			return err
 		}
@@ -120,7 +134,26 @@ func connectToMongoDB(dbType, host, port, dbUser, dbPwd, dbName, collectionName 
 }
 
 func insertFileDataIntoMongoDB(data FileData) error {
-	_, err := fileCollection.InsertOne(context.Background(), data)
+	data.ID = data.SourceFileHash + ":" + data.FileHash // Set the ID field as concatenation of SourceFileHash and FileHash
+
+	// Create a new document without the _id field
+	doc := bson.M{
+		"is_directory":     data.IsDirectory,
+		"file_size_raw":    data.FileSizeRaw,
+		"file_hash":        data.FileHash,
+		"source_file_hash": data.SourceFileHash,
+		"directory_hash":   data.DirectoryHash,
+		"file_permissions": data.FilePermissions,
+		"file_name":        data.FileName,
+		"source_file":      data.SourceFile,
+		"directory":        data.Directory,
+		"file_modify_date": data.FileModifyDate,
+		"exiftool_version": data.ExiftoolVersion,
+		"exiftool_data":    data.ExiftoolData,
+		"_id":              data.ID,
+	}
+
+	_, err := fileCollection.InsertOne(context.Background(), doc)
 	if err != nil {
 		return fmt.Errorf("failed to insert file data into MongoDB: %v", err)
 	}
@@ -128,44 +161,44 @@ func insertFileDataIntoMongoDB(data FileData) error {
 	return nil
 }
 
-func readDirectory(path string) error {
+func readDirectory(path string, parentDirHash string) error {
 	files, err := ioutil.ReadDir(path)
+
 	if err != nil {
 		return fmt.Errorf("error reading directory: %s", err)
+	}
+
+	dirHash, err := computeDirectoryHash(path, parentDirHash) // Compute directory hash based on the path and parent directory hash
+	if err != nil {
+		return fmt.Errorf("error computing directory hash: %s", err)
+	}
+
+	dirData := FileData{
+		IsDirectory:     true,
+		FileSizeRaw:     0,       // Set file size to 0 for directories
+		FileHash:        dirHash, // Set directory hash as the file hash for directories
+		SourceFileHash:  dirHash, // Set directory hash as the source file hash for directories
+		DirectoryHash:   dirHash,
+		FilePermissions: getPermissions(os.ModeDir), // Convert directory permissions to string
+		FileName:        filepath.Base(path),
+		SourceFile:      path,
+		Directory:       filepath.Dir(path),              // Update to save the parent directory instead of the root directory
+		FileModifyDate:  time.Now().Format(time.RFC3339), // Update to use current time
+		ExiftoolVersion: getExiftoolVersion(),
+	}
+
+	err = insertFileDataIntoMongoDB(dirData)
+	if err != nil {
+		fmt.Printf("Error inserting directory data into MongoDB: %v\n", err)
 	}
 
 	for _, file := range files {
 		filePath := filepath.Join(path, file.Name())
 
 		if file.IsDir() {
-			dirHash, err := computeDirectoryHash(filePath)
+			err = readDirectory(filePath, dirHash) // Pass the directory hash as the parent directory hash
 			if err != nil {
-				fmt.Printf("Error computing directory hash: %v\n", err)
-				continue
-			}
-
-			dirData := FileData{
-				IsDirectory:     true,
-				FileSizeRaw:     0,  // Set file size to 0 for directories
-				FileHash:        "", // Set file hash to empty string for directories
-				SourceFileHash:  "", // Set source file hash to empty string for directories
-				DirectoryHash:   dirHash,
-				FilePermissions: getPermissions(file.Mode()), // Convert file permissions to string
-				FileName:        file.Name(),
-				SourceFile:      filePath,
-				Directory:       path,
-				FileModifyDate:  file.ModTime().Format(time.RFC3339),
-				ExiftoolVersion: getExiftoolVersion(),
-			}
-
-			err = insertFileDataIntoMongoDB(dirData)
-			if err != nil {
-				fmt.Printf("Error inserting directory data into MongoDB: %v\n", err)
-			}
-
-			err = readDirectory(filePath)
-			if err != nil {
-				fmt.Printf("Error reading directory %s: %v\n", filePath, err)
+				fmt.Printf("Error reading subdirectory %s: %v\n", filePath, err)
 			}
 		} else {
 			fileHash, err := computeFileHash(filePath)
@@ -178,12 +211,12 @@ func readDirectory(path string) error {
 				IsDirectory:     false,
 				FileSizeRaw:     file.Size(),
 				FileHash:        fileHash,
-				SourceFileHash:  fileHash,                    // Set source file hash to file hash for files
-				DirectoryHash:   "",                          // Set directory hash to empty string for files
+				SourceFileHash:  dirHash,                     // Set directory hash as the source file hash for files
+				DirectoryHash:   dirHash,                     // Set directory hash to the current directory's hash for files
 				FilePermissions: getPermissions(file.Mode()), // Convert file permissions to string
 				FileName:        file.Name(),
 				SourceFile:      filePath,
-				Directory:       filepath.Dir(filePath), // Update to save the parent directory instead of the root directory
+				Directory:       path,
 				FileModifyDate:  file.ModTime().Format(time.RFC3339),
 				ExiftoolVersion: getExiftoolVersion(),
 			}
@@ -193,7 +226,7 @@ func readDirectory(path string) error {
 			if err != nil {
 				fmt.Printf("Error extracting Exiftool data for file %s: %v\n", filePath, err)
 			} else {
-				fileData.ExiftoolVersion = exiftoolData
+				fileData.ExiftoolData = exiftoolData // Assign the extracted Exiftool data to the ExiftoolData field
 			}
 
 			err = insertFileDataIntoMongoDB(fileData)
@@ -218,24 +251,31 @@ func getExiftoolVersion() string {
 }
 
 // Function to extract Exiftool data for a file
-func extractExiftoolData(filePath string) (string, error) {
+func extractExiftoolData(filePath string) (map[string]interface{}, error) {
 	cmd := exec.Command("exiftool", "-j", filePath)
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("failed to extract Exiftool data: %v", err)
+		return nil, fmt.Errorf("failed to extract Exiftool data: %v", err)
 	}
 
-	return string(output), nil
+	var data []map[string]interface{}
+	err = json.Unmarshal(output, &data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Exiftool data: %v", err)
+	}
+
+	if len(data) > 0 {
+		return data[0], nil // Return the first object in the array
+	}
+
+	return nil, nil
 }
 
 // Function to convert file permissions to r-w format
 func getPermissions(perm os.FileMode) string {
 	permStr := ""
 
-	if perm&os.ModePerm == 0 {
-		return "no access"
-	}
-
+	// File type
 	if perm&os.ModeDir != 0 {
 		permStr += "d"
 	} else {
@@ -255,46 +295,28 @@ func getPermissions(perm os.FileMode) string {
 		permStr += "-"
 	}
 
-	if perm&0100 != 0 {
-		permStr += "x"
-	} else {
-		permStr += "-"
-	}
-
 	// Group permissions
-	if perm&0040 != 0 {
+	if perm&040 != 0 {
 		permStr += "r"
 	} else {
 		permStr += "-"
 	}
 
-	if perm&0020 != 0 {
+	if perm&020 != 0 {
 		permStr += "w"
-	} else {
-		permStr += "-"
-	}
-
-	if perm&0010 != 0 {
-		permStr += "x"
 	} else {
 		permStr += "-"
 	}
 
 	// Other permissions
-	if perm&0004 != 0 {
+	if perm&04 != 0 {
 		permStr += "r"
 	} else {
 		permStr += "-"
 	}
 
-	if perm&0002 != 0 {
+	if perm&02 != 0 {
 		permStr += "w"
-	} else {
-		permStr += "-"
-	}
-
-	if perm&0001 != 0 {
-		permStr += "x"
 	} else {
 		permStr += "-"
 	}
@@ -324,7 +346,7 @@ func main() {
 	basePath := *path
 
 	// Read the directory
-	err = readDirectory(basePath)
+	err = readDirectory(basePath, "")
 	if err != nil {
 		fmt.Printf("Error reading directory: %v\n", err)
 		os.Exit(1)
