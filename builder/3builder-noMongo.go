@@ -203,7 +203,19 @@ func compileDirectoryData(pathValue string) string {
 	directoryHash := computeStringHash(directoryPathValue)
 
 	uuidObjectID := primitive.NewObjectID()
-	// UUID := sourcePathHash+":"+directoryHash// Generate a new ObjectID
+	UUID := sourcePathHash + ":" + directoryHash // Generate a new ObjectID
+
+	fmt.Println("UUID: ", UUID)
+	fmt.Println("UUID ObjectID: ", uuidObjectID)
+	fmt.Println("SourceFile: ", pathValue)
+	fmt.Println("Directory: ", directoryPathValue)
+	fmt.Println("FileName: ", fileInfo.Name())
+	fmt.Println("fsSizeRaw: ", sizeStr)
+	fmt.Println("fileMode: ", modeStr)
+	fmt.Println("fileModTime: ", modTimeStr)
+	fmt.Println("isDirectory: ", "true")
+	fmt.Println("sourcePathHash: ", sourcePathHash)
+	fmt.Println("directoryHash: ", directoryHash)
 
 	dirInfo := struct {
 		_id            primitive.ObjectID `bson:"_id"`
@@ -213,7 +225,7 @@ func compileDirectoryData(pathValue string) string {
 		fsSizeRaw      string             `bson:"fsSizeRaw"`
 		fileMode       string             `bson:"fileMode"`
 		fileModTime    string             `bson:"fileModTime"`
-		isDirectory    bool               `bson:"isDirectory"`
+		isDirectory    string             `bson:"isDirectory"`
 		sourcePathHash string             `bson:"sourcePathHash"`
 		directoryHash  string             `bson:"directoryHash"`
 	}{
@@ -224,10 +236,12 @@ func compileDirectoryData(pathValue string) string {
 		fsSizeRaw:      sizeStr,
 		fileMode:       modeStr,
 		fileModTime:    modTimeStr,
-		isDirectory:    true,
+		isDirectory:    "true",
 		sourcePathHash: sourcePathHash,
 		directoryHash:  directoryHash,
 	}
+
+	fmt.Printf("dirInfo - %#v\n", dirInfo)
 
 	fileJson, errMar := json.MarshalIndent(&dirInfo, "", "  ")
 	if errMar != nil {
@@ -333,79 +347,81 @@ func saveDataToDB(data string) error {
 	return nil
 }
 
-// A function to process a path (directory or file)
-func processPath(pathValue string) error {
-	// Get file information
-	fileInfo, err := readFileInfo(pathValue)
-	if err != nil {
-		return err
-	}
+// // A function to process a path (directory or file)
+// func processPath(pathValue string) error {
+// 	// Get file information
+// 	fileInfo, err := readFileInfo(pathValue)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	// Save directory data
-	if fileInfo.IsDir() {
-		response := compileDirectoryData(pathValue)
+// 	// Save directory data
+// 	if fileInfo.IsDir() {
+// 		response := compileDirectoryData(pathValue)
 
-		// Save the directory data to MongoDB
-		err = saveDataToDB(response)
-		if err != nil {
-			return err
-		}
+// 		// Save the directory data to MongoDB
+// 		err = saveDataToDB(response)
+// 		if err != nil {
+// 			return err
+// 		}
 
-		// If it's a directory, process its contents
-		// Open the directory
-		dir, err := os.Open(pathValue)
-		if err != nil {
-			return err
-		}
-		defer dir.Close()
+// 		// If it's a directory, process its contents
+// 		// Open the directory
+// 		dir, err := os.Open(pathValue)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		defer dir.Close()
 
-		// Read all the directory entries
-		entries, err := dir.Readdir(-1)
-		if err != nil {
-			return err
-		}
+// 		// Read all the directory entries
+// 		entries, err := dir.Readdir(-1)
+// 		if err != nil {
+// 			return err
+// 		}
 
-		// Loop over the directory entries and process each one
-		for _, entry := range entries {
-			entryPath := filepath.Join(pathValue, entry.Name())
+// 		// Loop over the directory entries and process each one
+// 		for _, entry := range entries {
+// 			entryPath := filepath.Join(pathValue, entry.Name())
 
-			// Process files and directories recursively
-			err = processPath(entryPath)
-			if err != nil {
-				return err
-			}
-		}
-	} else {
-		// If the path is a file, process the file
-		response := compileFileData(pathValue)
+// 			// Process files and directories recursively
+// 			err = processPath(entryPath)
+// 			if err != nil {
+// 				return err
+// 			}
+// 		}
+// 	} else {
+// 		// If the path is a file, process the file
+// 		response := compileFileData(pathValue)
 
-		// Save the file data to MongoDB
-		err = saveDataToDB(response)
-		if err != nil {
-			return err
-		}
-	}
+// 		// Save the file data to MongoDB
+// 		err = saveDataToDB(response)
+// 		if err != nil {
+// 			return err
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func main() {
 	flag.Parse()
 	pathValue := *path
 
-	// Connect to MongoDB
-	err := connectToMongoDB("mongodb", "localhost", "27017", "admin", "password", "sopie", "builder-test")
-	if err != nil {
-		fmt.Printf("Failed to connect to MongoDB: %v\n", err)
-		return
-	}
+	// // Connect to MongoDB
+	// err := connectToMongoDB("mongodb", "localhost", "27017", "admin", "password", "sopie", "builder-test")
+	// if err != nil {
+	// 	fmt.Printf("Failed to connect to MongoDB: %v\n", err)
+	// 	return
+	// }
 
 	// Process the path
-	err = processPath(pathValue)
-	if err != nil {
-		fmt.Printf("Failed to process path: %v\n", err)
-		return
-	}
+	// err = processPath(pathValue)
+	response := compileBaseData(pathValue)
+	fmt.Println(response)
+	// if err != nil {
+	// 	fmt.Printf("Failed to process path: %v\n", err)
+	// 	return
+	// }
 
-	fmt.Println("Data saved to MongoDB successfully.")
+	// fmt.Println("Data saved to MongoDB successfully.")
 }
