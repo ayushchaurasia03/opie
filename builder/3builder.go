@@ -14,7 +14,7 @@ import (
 	"reflect"
 	"strconv"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -23,7 +23,7 @@ var path *string
 var fileCollection *mongo.Collection
 
 func init() {
-	path = flag.String("path", "/home/delimp/Documents/test/", "full path")
+	path = flag.String("path", "/home/delimp/Downloads/OPIe", "full path")
 }
 
 // Compute the sha1 hash of a file
@@ -203,35 +203,22 @@ func compileDirectoryData(pathValue string) string {
 	directoryPathValue := filepath.Dir(pathValue)
 	directoryHash := computeStringHash(directoryPathValue)
 
-	uuidObjectID := primitive.NewObjectID()
-	// UUID := sourcePathHash + ":" + directoryHash // Generate a new ObjectID
+	uuid := sourcePathHash + ":" + directoryHash
 
-	dirInfo := struct {
-		_id            primitive.ObjectID `bson:"_id"`
-		SourceFile     string             `bson:"SourceFile"`
-		Directory      string             `bson:"Directory"`
-		FileName       string             `bson:"FileName"`
-		FsSizeRaw      string             `bson:"FsSizeRaw"`
-		FileMode       string             `bson:"FileMode"`
-		FileModTime    string             `bson:"FileModTime"`
-		IsDirectory    string             `bson:"IsDirectory"`
-		SourcePathHash string             `bson:"SourcePathHash"`
-		DirectoryHash  string             `bson:"DirectoryHash"`
-	}{
-		_id:            uuidObjectID,
-		SourceFile:     pathValue,
-		Directory:      directoryPathValue,
-		FileName:       fileInfo.Name(),
-		FsSizeRaw:      sizeStr,
-		FileMode:       modeStr,
-		FileModTime:    modTimeStr,
-		IsDirectory:    "true",
-		SourcePathHash: sourcePathHash,
-		DirectoryHash:  directoryHash,
+	dirInfo := map[string]interface{}{
+		"_id":            uuid,
+		"SourceFile":     pathValue,
+		"Directory":      directoryPathValue,
+		"FileName":       fileInfo.Name(),
+		"FsSizeRaw":      sizeStr,
+		"FileMode":       modeStr,
+		"FileModTime":    modTimeStr,
+		"IsDirectory":    "true",
+		"SourcePathHash": sourcePathHash,
+		"DirectoryHash":  directoryHash,
 	}
-	//	dirInfo["_id"] = UUID
 
-	fileJson, errMar := json.MarshalIndent(&dirInfo, "", "  ")
+	fileJson, errMar := json.MarshalIndent(dirInfo, "", "  ")
 	if errMar != nil {
 		fmt.Printf("err - %v\n", errMar)
 	}
@@ -266,13 +253,22 @@ func compileFileData(pathValue string) string {
 	directoryPathValue := filepath.Dir(pathValue)
 	directoryHash := computeStringHash(directoryPathValue)
 
-	// Set UIID - for files this is the source path hash + file hash
+	// Set UUID - for files, this is the source path hash + file hash
 	UUID := sourcePathHash + ":" + fileHash
 
 	// Read the file's exif data by calling readExifData
 	exifData, err := readExifData(pathValue)
 	if err != nil {
-		panic(err)
+		// If exif data cannot be read, treat it as a directory
+		response := compileDirectoryData(pathValue)
+
+		// Save the limited directory data to MongoDB
+		err = saveDataToDB(response)
+		if err != nil {
+			panic(err)
+		}
+
+		return response
 	}
 
 	exifData["_id"] = UUID
@@ -285,7 +281,7 @@ func compileFileData(pathValue string) string {
 	exifData["fsModTime"] = modTimeStr
 	exifData["isDirectory"] = "false"
 
-	// Marshal outbound json
+	// Marshal outbound JSON
 	fileJson, errUnm := json.MarshalIndent(&exifData, "", "  ")
 	if errUnm != nil {
 		fmt.Printf("err - %v\n", errUnm)
@@ -327,8 +323,20 @@ func saveDataToDB(data string) error {
 		return err
 	}
 
-	// Insert the data into the MongoDB collection
-	_, err := fileCollection.InsertOne(context.Background(), jsonData)
+	// Extract the _id from the data
+	id := jsonData["_id"].(string)
+
+	// Set the filter to check if the document with the given _id already exists
+	filter := bson.M{"_id": id}
+
+	// Set the update to replace the existing document with the new data
+	update := bson.M{"$set": jsonData}
+
+	// Set the options for upsert (create if not exists)
+	options := options.Update().SetUpsert(true)
+
+	// Perform the upsert operation in MongoDB
+	_, err := fileCollection.UpdateOne(context.Background(), filter, update, options)
 	if err != nil {
 		return err
 	}
