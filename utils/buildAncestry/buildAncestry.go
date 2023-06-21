@@ -24,6 +24,7 @@ func main() {
 
 	paths := ancestorPaths(fileValue, rootValue)
 	hashes := ancestorHashes(paths)
+
 	fmt.Println(paths)
 	fmt.Println(hashes)
 }
