@@ -1,0 +1,20 @@
+{
+    "DbType": "mongodb",
+    "Host": "localhost",
+    "Port": "27017",
+    "DbUser": "admin",
+    "DbPwd": "password",
+    "DbName": "sopie",
+    "FileColl": "watcher",
+    "TreeColl": "trees",
+    "NoExif": [
+      "dmg",
+      "app",
+      "json"
+    ],
+    "Watcher": [
+      "/home/delimp/Documents/OPIe/watcher",
+      "/home/delimp/Documents/project-phi",
+      "/home/delimp/Downloads"
+    ]
+  }
