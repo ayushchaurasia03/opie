@@ -7,12 +7,6 @@
   "DbName": "sopie",
   "FileColl": "files",
   "TreeColl": "trees",
-  "NoExif": [
-    "dmg",
-    "app",
-    "json",
-    "exe"
-  ],
   "Watcher": [
     "/path/to/watch",
     "/second/path/to/watch",
