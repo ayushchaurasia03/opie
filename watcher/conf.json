@@ -2,8 +2,8 @@
     "DbType": "mongodb",
     "Host": "localhost",
     "Port": "27017",
-    "DbUser": "admin",
-    "DbPwd": "password",
+    "DbUser": "localAdmin",
+    "DbPwd": "Army89Run!",
     "DbName": "sopie",
     "FileColl": "watcher",
     "TreeColl": "trees",
@@ -13,8 +13,8 @@
       "json"
     ],
     "Watcher": [
-      "/home/delimp/Documents/OPIe/watcher",
-      "/home/delimp/Documents/project-phi",
-      "/home/delimp/Downloads"
+      "/Users/greghacke/Pictures/OPIe",
+      "/Users/greghacke/go/OPIe/builder",
+      "/Users/greghacke/Downloads"
     ]
   }
