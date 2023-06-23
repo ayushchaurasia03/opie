@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/fsnotify/fsnotify"
@@ -105,7 +106,7 @@ func main() {
 			select {
 			case event := <-watcher.Events:
 				// Handle the events
-				if event.Op&fsnotify.Create == fsnotify.Create {
+				if event.Op&fsnotify.Write == fsnotify.Write {
 					file, err := os.Stat(event.Name)
 					if err != nil {
 						log.Println("Error getting file info:", err)
@@ -128,10 +129,12 @@ func main() {
 						}
 						log.Println(string(fileInfoJSON))
 
-						// Insert document into MongoDB
-						_, err = fileCollection.InsertOne(context.TODO(), fileInfo)
+						// Execute r3_builder.go as a separate process
+						cmd := exec.Command("go", "run", filepath.Join("builder", "4builder.go"), "-path", event.Name)
+						cmd.Dir = "/"
+						err = cmd.Run()
 						if err != nil {
-							log.Println("Error inserting document into MongoDB:", err)
+							log.Println("Error executing r3_builder.go:", err)
 						}
 					} else {
 						dirInfo := struct {
