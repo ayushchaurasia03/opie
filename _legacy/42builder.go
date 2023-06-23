@@ -146,17 +146,16 @@ func readExifData(filePath string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	var data []map[string]interface{}
 	if err := json.Unmarshal(stdout, &data); err != nil {
-		return nil, err
+		// Handle the case when the file has no EXIF data
+		emptyData := make(map[string]string)
+		return emptyData, nil
 	}
-
 	result := make(map[string]string)
 	for k, v := range data[0] {
 		flatten(result, k, reflect.ValueOf(v))
 	}
-
 	return result, nil
 }
 
@@ -439,7 +438,7 @@ func main() {
 	pathValue := *path
 
 	// Connect to MongoDB
-	err := connectToMongoDB("mongodb", "localhost", "27017", "localAdmin", "Army89Run!", "sopie", "builder-test")
+	err := connectToMongoDB("mongodb", "localhost", "27017", "localAdmin", "Army89Run!", "sopie", "testing")
 	if err != nil {
 		fmt.Printf("Failed to connect to MongoDB: %v\n", err)
 		return

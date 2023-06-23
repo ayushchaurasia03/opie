@@ -61,20 +61,12 @@ func computeStringHash(input string) string {
 	hash.Write([]byte(input))
 	hashBytes := hash.Sum(nil)
 	hashValue := hex.EncodeToString(hashBytes)
-<<<<<<< HEAD
-=======
-
->>>>>>> Refactor-GCH
 	return hashValue
 }
 
 // Compute an array of ancestor paths
 func ancestorPaths(file, root string) []string {
 	var paths []string
-<<<<<<< HEAD
-=======
-
->>>>>>> Refactor-GCH
 	for {
 		file = filepath.Dir(file)
 		paths = append(paths, file)
@@ -82,33 +74,18 @@ func ancestorPaths(file, root string) []string {
 			break
 		}
 	}
-<<<<<<< HEAD
-=======
-
->>>>>>> Refactor-GCH
 	return paths
 }
 
 // Compute an array of ancestor hashes
 func ancestorHashes(strs []string) []string {
 	var hashes []string
-<<<<<<< HEAD
-=======
-
->>>>>>> Refactor-GCH
 	for _, str := range strs {
 		hash := sha1.New()
 		hash.Write([]byte(str))
 		sha1Hash := fmt.Sprintf("%x", hash.Sum(nil))
-<<<<<<< HEAD
 		hashes = append(hashes, sha1Hash)
 	}
-=======
-
-		hashes = append(hashes, sha1Hash)
-	}
-
->>>>>>> Refactor-GCH
 	return hashes
 }
 
@@ -119,28 +96,16 @@ func readExifData(filePath string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-<<<<<<< HEAD
-=======
-
->>>>>>> Refactor-GCH
 	var data []map[string]interface{}
 	if err := json.Unmarshal(stdout, &data); err != nil {
 		// Handle the case when the file has no EXIF data
 		emptyData := make(map[string]string)
 		return emptyData, nil
 	}
-<<<<<<< HEAD
-=======
-
->>>>>>> Refactor-GCH
 	result := make(map[string]string)
 	for k, v := range data[0] {
 		flatten(result, k, reflect.ValueOf(v))
 	}
-<<<<<<< HEAD
-=======
-
->>>>>>> Refactor-GCH
 	return result, nil
 }
 
@@ -446,11 +411,7 @@ func main() {
 	pathValue := *path
 
 	// Connect to MongoDB
-<<<<<<< HEAD
 	collection, err := connectToMongoDB("mongodb", "localhost", "27017", "localAdmin", "Army89Run!", "sopie", "testing")
-=======
-	collection, err := connectToMongoDB("mongodb", "localhost", "27017", "admin", "password", "sopie", "testing")
->>>>>>> Refactor-GCH
 	if err != nil {
 		fmt.Printf("Failed to connect to MongoDB: %v\n", err)
 		return
