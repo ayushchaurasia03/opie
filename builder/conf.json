@@ -1,0 +1,20 @@
+{
+    "DbType": "mongodb",
+    "Host": "localhost",
+    "Port": "27017",
+    "DbUser": "localAdmin",
+    "DbPwd": "Army89Run!",
+    "DbName": "sopie",
+    "FileColl": "watcher",
+    "TreeColl": "trees",
+    "NoExif": [
+      "dmg",
+      "app",
+      "json"
+    ],
+    "Watcher": [
+      "/Users/greghacke/Pictures/OPIe",
+      "/Users/greghacke/go/OPIe/builder",
+      "/Users/greghacke/Downloads"
+    ]
+  }
