@@ -41,7 +41,7 @@ func main() {
 	}
 
 	// Connect to MongoDB
-	collection, err := connectToMongoDB("mongodb", "localhost", "27017", "localAdmin", "Army89Run!", "sopie", "test")
+	collection, err := connectToMongoDB("mongodb", "localhost", "27017", "admin", "password", "sopie", "testing")
 	if err != nil {
 		fmt.Printf("Failed to connect to MongoDB: %v\n", err)
 		return
@@ -62,7 +62,7 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 	}
 
 	if fileInfo.IsDir() {
-		err = runCompileAndWrite(collection *&mongo.Collection, pathValue, rootValue string, watcherValue *bool)
+		err = runCompileAndWrite(collection, pathValue, rootValue, *watcherValue)
 		if err != nil {
 			fmt.Println("Failed to save data to MongoDB: ", err)
 			return
@@ -94,7 +94,7 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 
 	} else {
 		// If the path is a file, process it
-		err = runCompileAndWrite(collection *&mongo.Collection, pathValue, rootValue string, watcherValue *bool)
+		err = runCompileAndWrite(collection, pathValue, rootValue, *watcherValue)
 		if err != nil {
 			fmt.Println("Failed to save data to MongoDB: ", err)
 			return
@@ -138,8 +138,9 @@ func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue strin
 		if err != nil {
 			fmt.Println("Failed to save data to MongoDB: ", err)
 			return err
-		}	
+		}
 	}
+	return nil
 }
 
 // Compile directory data
