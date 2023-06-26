@@ -41,7 +41,7 @@ func main() {
 	}
 
 	// Connect to MongoDB
-	collection, err := connectToMongoDB("mongodb", "localhost", "27017", "localAdmin", "Army89Run!", "sopie", "files-test")
+	collection, err := connectToMongoDB("mongodb", "localhost", "27017", "localAdmin", "Army89Run!", "sopie", "test")
 	if err != nil {
 		fmt.Printf("Failed to connect to MongoDB: %v\n", err)
 		return
@@ -62,9 +62,7 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 	}
 
 	if fileInfo.IsDir() {
-		dirInfo := compileDirectoryData(pathValue, rootValue)
-		// Save the directory data to MongoDB
-		err = saveDataToDB(collection, dirInfo)
+		err = runCompileAndWrite(collection *&mongo.Collection, pathValue, rootValue string, watcherValue *bool)
 		if err != nil {
 			fmt.Println("Failed to save data to MongoDB: ", err)
 			return
@@ -96,14 +94,7 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 
 	} else {
 		// If the path is a file, process it
-		fileData := compileFileData(pathValue, rootValue)
-
-		if err != nil {
-			fmt.Println("Failed to compile file data: ", err)
-			return
-		}
-		// Save the file data to MongoDB
-		err = saveDataToDB(collection, fileData)
+		err = runCompileAndWrite(collection *&mongo.Collection, pathValue, rootValue string, watcherValue *bool)
 		if err != nil {
 			fmt.Println("Failed to save data to MongoDB: ", err)
 			return
@@ -118,6 +109,37 @@ func readFileInfo(filePath string) (os.FileInfo, error) {
 		return nil, err
 	}
 	return fileInfo, nil
+}
+
+// Determine file type and do both compileXData and saveDataToDB
+func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool) error {
+	// Get file information
+	fileInfo, err := readFileInfo(pathValue)
+	if err != nil {
+		return err
+	}
+	if fileInfo.IsDir() {
+		dirInfo := compileDirectoryData(pathValue, rootValue)
+		// Save the directory data to MongoDB
+		err = saveDataToDB(collection, dirInfo)
+		if err != nil {
+			fmt.Println("Failed to save data to MongoDB: ", err)
+			return err
+		}
+	} else {
+		// If the path is a file, process it
+		fileData := compileFileData(pathValue, rootValue)
+		if err != nil {
+			fmt.Println("Failed to compile file data: ", err)
+			return err
+		}
+		// Save the file data to MongoDB
+		err = saveDataToDB(collection, fileData)
+		if err != nil {
+			fmt.Println("Failed to save data to MongoDB: ", err)
+			return err
+		}	
+	}
 }
 
 // Compile directory data
