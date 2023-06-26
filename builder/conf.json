@@ -7,7 +7,7 @@
     "DbName": "sopie",
     "FileColl": "watcher",
     "TreeColl": "trees",
-    "MaxThreads": 25,
+    "maxGoroutines": 25,
     "NoExif": [
       "dmg",
       "app",

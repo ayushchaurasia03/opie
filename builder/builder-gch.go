@@ -26,6 +26,11 @@ var root *string
 var watcher *bool
 var fileCollection *mongo.Collection
 
+// Add the maxThreads for go routines - should pull from config.json
+const maxRoutines = 25
+
+var sem = make(chan struct{}, maxRoutines)
+
 func init() {
 	path = flag.String("path", "/home/delimp/Downloads/OPIe", "full path")
 	root = flag.String("root", "", "root path")
@@ -278,6 +283,7 @@ func compileFileDataNoExif(pathValue, rootValue string) (map[string]string, erro
 	ancestorPathsString := strings.Join(ancestorPaths, ", ")
 	ancestorPathHashes := ancestryPathHashes(ancestorPaths)
 	fileHash := computeFileHash(pathValue)
+	fileExtension := filepath.Ext(pathValue)
 	uuid := sourcePathHash + ":" + fileHash
 
 	result := map[string]string{
@@ -288,6 +294,7 @@ func compileFileDataNoExif(pathValue, rootValue string) (map[string]string, erro
 		"FileSizeRaw":        sizeString,
 		"FileMode":           modeString,
 		"FileModTime":        modTimeString,
+		"FileTypeExtension":  fileExtension,
 		"IsDirectory":        "false",
 		"SourcePathHash":     sourcePathHash,
 		"DirectoryHash":      directoryHash,
