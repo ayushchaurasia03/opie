@@ -2,10 +2,10 @@
     "DbType": "mongodb",
     "Host": "localhost",
     "Port": "27017",
-    "DbUser": "localAdmin",
-    "DbPwd": "Army89Run!",
+    "DbUser": "admin",
+    "DbPwd": "password",
     "DbName": "sopie",
-    "FileColl": "watcher",
+    "FileColl": "config-optimize",
     "TreeColl": "trees",
     "maxGoroutines": 25,
     "NoExif": [
@@ -14,8 +14,10 @@
       "json"
     ],
     "Watcher": [
-      "/Users/greghacke/Pictures/OPIe",
-      "/Users/greghacke/go/OPIe/builder",
-      "/Users/greghacke/Downloads"
-    ]
+      "/home/delimp/Documents/OPIe",
+      "/home/delimp/Documents/project-phi",
+      "/home/delimp/Downloads"
+    ],
+    "root":"/home/delimp/Documents",
+    "path":"/home/delimp/Documents/OPIe"
   }
