@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -21,24 +22,50 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+type Config struct {
+	DbType        string   `json:"DbType"`
+	Host          string   `json:"Host"`
+	Port          string   `json:"Port"`
+	DbUser        string   `json:"DbUser"`
+	DbPwd         string   `json:"DbPwd"`
+	DbName        string   `json:"DbName"`
+	FileColl      string   `json:"FileColl"`
+	TreeColl      string   `json:"TreeColl"`
+	MaxGoroutines int      `json:"maxGoroutines"`
+	NoExif        []string `json:"NoExif"`
+	Watcher       []string `json:"Watcher"`
+	Root          string   `json:"root"`
+	Path          string   `json:"path"`
+}
+
 var path *string
 var root *string
 var watcher *bool
 var fileCollection *mongo.Collection
 
-// Add the maxThreads for go routines - should pull from config.json
-const maxRoutines = 25
-
-var sem = make(chan struct{}, maxRoutines)
-
 func init() {
-	path = flag.String("path", "/home/delimp/Downloads/OPIe", "full path")
-	root = flag.String("root", "", "root path")
+	// Read the configuration file
+	config, err := readConfig("conf.json")
+	if err != nil {
+		fmt.Printf("Failed to read configuration file: %v\n", err)
+		return
+	}
+
+	path = flag.String("path", config.Path, "full path")
+	root = flag.String("root", config.Root, "root path")
 	watcher = flag.Bool("watcher", false, "watcher")
 }
 
 func main() {
 	flag.Parse()
+
+	// Read the configuration file
+	config, err := readConfig("conf.json")
+	if err != nil {
+		fmt.Printf("Failed to read configuration file: %v\n", err)
+		return
+	}
+
 	pathValue := *path
 	rootValue := *root
 	if rootValue == "" {
@@ -46,33 +73,48 @@ func main() {
 	}
 
 	// Connect to MongoDB
-	collection, err := connectToMongoDB("mongodb", "localhost", "27017", "localAdmin", "Army89Run!", "sopie", "testing")
+	collection, err := connectToMongoDB(config.DbType, config.Host, config.Port, config.DbUser, config.DbPwd, config.DbName, config.FileColl)
 	if err != nil {
 		fmt.Printf("Failed to connect to MongoDB: %v\n", err)
 		return
 	}
 
-	//	Process the path
-	processPath(collection, pathValue, rootValue, watcher)
-	// fmt.Println("Data saved to MongoDB successfully.")
+	// Process the path
+	processPath(collection, pathValue, rootValue, *watcher)
+
+	fmt.Println("Data saved to MongoDB successfully.")
+}
+
+func readConfig(filename string) (Config, error) {
+	var config Config
+
+	// Read the JSON file
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return config, fmt.Errorf("failed to read configuration file: %v", err)
+	}
+
+	// Unmarshal the JSON data into the Config struct
+	err = json.Unmarshal(data, &config)
+	if err != nil {
+		return config, fmt.Errorf("failed to unmarshal configuration data: %v", err)
+	}
+
+	return config, nil
 }
 
 // Process the path
-func processPath(collection *mongo.Collection, pathValue, rootValue string, watcherValue *bool) {
-	// Get file information
+func processPath(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool) {
+	// Get file information once
 	fileInfo, err := readFileInfo(pathValue)
 	if err != nil {
 		fmt.Printf("Failed to read file info: %v\n", err)
 		return
 	}
 
-	if fileInfo.IsDir() {
-		err = runCompileAndWrite(collection, pathValue, rootValue, *watcherValue)
-		if err != nil {
-			fmt.Println("Failed to save data to MongoDB: ", err)
-			return
-		}
+	runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo)
 
+	if fileInfo.IsDir() {
 		// If it's a directory, process its contents
 		// Open the directory
 		dir, err := os.Open(pathValue)
@@ -97,13 +139,6 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 			processPath(collection, entryPath, rootValue, watcherValue)
 		}
 
-	} else {
-		// If the path is a file, process it
-		err = runCompileAndWrite(collection, pathValue, rootValue, *watcherValue)
-		if err != nil {
-			fmt.Println("Failed to save data to MongoDB: ", err)
-			return
-		}
 	}
 }
 
@@ -117,23 +152,18 @@ func readFileInfo(filePath string) (os.FileInfo, error) {
 }
 
 // Determine file type and do both compileXData and saveDataToDB
-func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool) error {
-	// Get file information
-	fileInfo, err := readFileInfo(pathValue)
-	if err != nil {
-		return err
-	}
+func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
 	if fileInfo.IsDir() {
-		dirInfo := compileDirectoryData(pathValue, rootValue)
+		dirInfo := compileDirectoryData(pathValue, rootValue, fileInfo)
 		// Save the directory data to MongoDB
-		err = saveDataToDB(collection, dirInfo)
+		err := saveDataToDB(collection, dirInfo)
 		if err != nil {
 			fmt.Println("Failed to save data to MongoDB: ", err)
 			return err
 		}
 	} else {
 		// If the path is a file, process it
-		fileData := compileFileData(pathValue, rootValue)
+		fileData, err := compileFileData(pathValue, rootValue, fileInfo)
 		if err != nil {
 			fmt.Println("Failed to compile file data: ", err)
 			return err
@@ -149,13 +179,7 @@ func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue strin
 }
 
 // Compile directory data
-func compileDirectoryData(pathValue, rootValue string) map[string]string {
-	// Get file information
-	fileInfo, err := readFileInfo(pathValue)
-	if err != nil {
-		fmt.Printf("Failed to read file info: %v\n", err)
-		return nil
-	}
+func compileDirectoryData(pathValue, rootValue string, fileInfo os.FileInfo) map[string]string {
 	// Structure the file information
 	sourceFile := pathValue
 	directoryName := filepath.Dir(sourceFile)
@@ -210,20 +234,15 @@ func readExifData(filePath string) (map[string]string, error) {
 	return result, nil
 }
 
-// Comple file data
-func compileFileData(pathValue, rootValue string) map[string]string {
-	fileInfo, err := readFileInfo(pathValue)
-	if err != nil {
-		fmt.Printf("Failed to read file info: %v\n", err)
-		return nil
-	}
+// Compile file data
+func compileFileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]string, error) {
 	// Read file's exif data using exiftool
 	exifData, err := readExifData(pathValue)
 	if err != nil {
-		exifData, err = compileFileDataNoExif(pathValue, rootValue)
+		exifData, err = compileFileDataNoExif(pathValue, rootValue, fileInfo)
 		if err != nil {
 			fmt.Println("Failed to read exif data: ", err)
-			return nil
+			return nil, err
 		}
 	}
 
@@ -257,16 +276,11 @@ func compileFileData(pathValue, rootValue string) map[string]string {
 	exifData["FileTypeExtension"] = fsExtension
 	exifData["IsDirectory"] = "false"
 
-	return exifData
+	return exifData, nil
 }
 
 // Compile file data from files that return no exif data
-func compileFileDataNoExif(pathValue, rootValue string) (map[string]string, error) {
-	fileInfo, err := readFileInfo(pathValue)
-	if err != nil {
-		fmt.Printf("Failed to read file info: %v\n", err)
-		return nil, err
-	}
+func compileFileDataNoExif(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]string, error) {
 	// Structure the file information
 	sourceFile := pathValue
 	directoryName := filepath.Dir(sourceFile)
@@ -283,7 +297,6 @@ func compileFileDataNoExif(pathValue, rootValue string) (map[string]string, erro
 	ancestorPathsString := strings.Join(ancestorPaths, ", ")
 	ancestorPathHashes := ancestryPathHashes(ancestorPaths)
 	fileHash := computeFileHash(pathValue)
-	fileExtension := filepath.Ext(pathValue)
 	uuid := sourcePathHash + ":" + fileHash
 
 	result := map[string]string{
@@ -294,7 +307,6 @@ func compileFileDataNoExif(pathValue, rootValue string) (map[string]string, erro
 		"FileSizeRaw":        sizeString,
 		"FileMode":           modeString,
 		"FileModTime":        modTimeString,
-		"FileTypeExtension":  fileExtension,
 		"IsDirectory":        "false",
 		"SourcePathHash":     sourcePathHash,
 		"DirectoryHash":      directoryHash,
@@ -412,7 +424,7 @@ func computeFileHash(filename string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// Extracted from flatjson.go
+// Flatten nested map data
 func flatten(result map[string]string, prefix string, v reflect.Value) {
 	if v.Kind() == reflect.Interface {
 		v = v.Elem()
@@ -440,6 +452,7 @@ func flatten(result map[string]string, prefix string, v reflect.Value) {
 	}
 }
 
+// Flatten nested map data with map keys
 func flattenMap(result map[string]string, prefix string, v reflect.Value) {
 	for _, k := range v.MapKeys() {
 		if k.Kind() == reflect.Interface {
@@ -454,6 +467,7 @@ func flattenMap(result map[string]string, prefix string, v reflect.Value) {
 	}
 }
 
+// Flatten nested map data with slice values
 func flattenSlice(result map[string]string, prefix string, v reflect.Value) {
 	prefix = prefix + "."
 	for i := 0; i < v.Len(); i++ {
