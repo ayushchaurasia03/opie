@@ -412,26 +412,6 @@ func computeFileHash(filename string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// // Read Exifdata using exiftool and flatten the data returned into a map
-// func readExifData(filePath string) (map[string]string, error) {
-// 	cmd := exec.Command("exiftool", "-j", filePath)
-// 	stdout, err := cmd.Output()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	var data []map[string]interface{}
-// 	if err := json.Unmarshal(stdout, &data); err != nil {
-// 		// Handle the case when the file has no EXIF data
-// 		emptyData := make(map[string]string)
-// 		return emptyData, nil
-// 	}
-// 	result := make(map[string]string)
-// 	for k, v := range data[0] {
-// 		flatten(result, k, reflect.ValueOf(v))
-// 	}
-// 	return result, nil
-// }
-
 // Extracted from flatjson.go
 func flatten(result map[string]string, prefix string, v reflect.Value) {
 	if v.Kind() == reflect.Interface {
