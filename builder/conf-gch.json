@@ -2,10 +2,10 @@
     "DbType": "mongodb",
     "Host": "localhost",
     "Port": "27017",
-    "DbUser": "admin",
-    "DbPwd": "password",
+    "DbUser": "localAdmin",
+    "DbPwd": "Army89Run!",
     "DbName": "sopie",
-    "FileColl": "config-optimize",
+    "FileColl": "testing",
     "TreeColl": "trees",
     "maxGoroutines": 25,
     "NoExif": [
