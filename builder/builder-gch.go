@@ -142,7 +142,6 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 
 // // Determine file type and do both compileXData and saveDataToDB
 func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
-
 	dataInfo, err := compileData(pathValue, rootValue, fileInfo)
 	// Save the directory data to MongoDB
 	err = saveDataToDB(collection, dataInfo)
