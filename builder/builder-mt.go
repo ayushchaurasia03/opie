@@ -157,7 +157,7 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 	}
 }
 
-// // Determine file type and do both compileXData and saveDataToDB
+// Determine file type and do both compileXData and saveDataToDB
 func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo, complete chan<- bool) error {
 	dataInfo, err := compileData(pathValue, rootValue, fileInfo)
 	// Save the directory data to MongoDB
