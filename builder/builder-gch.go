@@ -141,52 +141,52 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 }
 
 // // Determine file type and do both compileXData and saveDataToDB
-// func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
-
-// 	dataInfo, err := compileData(pathValue, rootValue, fileInfo)
-// 	// Save the directory data to MongoDB
-// 	err = saveDataToDB(collection, dataInfo)
-// 	if err != nil {
-// 		fmt.Println("Failed to save data to MongoDB: ", err)
-// 		return err
-// 	}
-// 	return nil
-// }
-
 func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
-	// Create a channel to receive the data from compileData
-	dataChan := make(chan map[string]string, 1)
 
-	// Create a channel to receive any errors
-	errChan := make(chan error, 1)
-
-	// Run compileData in a goroutine
-	go func() {
-		dataInfo, err := compileData(pathValue, rootValue, fileInfo)
-		if err != nil {
-			errChan <- err
-			return
-		}
-		// Send the data to the channel
-		dataChan <- dataInfo
-	}()
-
-	// Wait for data or an error from the channels
-	select {
-	case dataInfo := <-dataChan:
-		// Save the directory data to MongoDB
-		err := saveDataToDB(collection, dataInfo)
-		if err != nil {
-			fmt.Println("Failed to save data to MongoDB: ", err)
-			return err
-		}
-	case err := <-errChan:
-		fmt.Println("Failed to compile data: ", err)
+	dataInfo, err := compileData(pathValue, rootValue, fileInfo)
+	// Save the directory data to MongoDB
+	err = saveDataToDB(collection, dataInfo)
+	if err != nil {
+		fmt.Println("Failed to save data to MongoDB: ", err)
 		return err
 	}
-
 	return nil
 }
+
+// func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
+// 	// Create a channel to receive the data from compileData
+// 	dataChan := make(chan map[string]string, 1)
+
+// 	// Create a channel to receive any errors
+// 	errChan := make(chan error, 1)
+
+// 	// Run compileData in a goroutine
+// 	go func() {
+// 		dataInfo, err := compileData(pathValue, rootValue, fileInfo)
+// 		if err != nil {
+// 			errChan <- err
+// 			return
+// 		}
+// 		// Send the data to the channel
+// 		dataChan <- dataInfo
+// 	}()
+
+// 	// Wait for data or an error from the channels
+// 	select {
+// 	case dataInfo := <-dataChan:
+// 		// Save the directory data to MongoDB
+// 		err := saveDataToDB(collection, dataInfo)
+// 		if err != nil {
+// 			fmt.Println("Failed to save data to MongoDB: ", err)
+// 			return err
+// 		}
+// 	case err := <-errChan:
+// 		fmt.Println("Failed to compile data: ", err)
+// 		return err
+// 	}
+
+// 	return nil
+// }
 
 // Compile directory or file data
 func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]string, error) {
