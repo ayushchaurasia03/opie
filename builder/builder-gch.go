@@ -189,7 +189,37 @@ func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue strin
 
 // Compile directory or file data
 func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]string, error) {
-	if fileInfo.IsDir() {
+	if fileInfo.Mode()&os.ModeSymlink != 0 {
+		// For symlinks, handle symlink data
+		linkPath, err := os.Readlink(pathValue)
+		if err != nil {
+			return nil, err
+		}
+		symlinkIsDir := ""
+		if fileInfo.IsDir() {
+			symlinkIsDir = "true"
+		} else {
+			symlinkIsDir = "false"
+		}
+
+		symlinkInfo := map[string]string{
+			"_id":                computeStringHash(pathValue),
+			"SourceFile":         pathValue,
+			"DirectoryName":      filepath.Dir(pathValue),
+			"FileName":           fileInfo.Name(),
+			"FileSizeRaw":        strconv.FormatInt(fileInfo.Size(), 10),
+			"FileMode":           fileInfo.Mode().String(),
+			"FileModTime":        fileInfo.ModTime().Format("2006-01-02 15:04:05"),
+			"SourcePathHash":     computeStringHash(pathValue),
+			"DirectoryHash":      computeStringHash(filepath.Dir(pathValue)),
+			"AncestryPaths":      strings.Join(ancestryPaths(pathValue, rootValue), ", "),
+			"AncestryPathHashes": strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", "),
+			"IsDirectory":        symlinkIsDir,
+			"IsSymLink":          "true",
+			"SymlinkDestination": linkPath,
+		}
+		return symlinkInfo, nil
+	} else if fileInfo.IsDir() {
 		// For directories, compile directory data
 		dirInfo := map[string]string{
 			"_id":                computeStringHash(pathValue),
