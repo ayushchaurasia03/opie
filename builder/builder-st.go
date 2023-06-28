@@ -43,8 +43,6 @@ var path *string
 var root *string
 var watcher *bool
 var fileCollection *mongo.Collection
-var workerCount = 25
-var workerPool = make(chan struct{}, workerCount)
 
 // init() variables and use the default cinfiguration. Note, the conf.json file must
 // exist in the same directory as the builder executable
@@ -116,19 +114,6 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 	}
 
 	runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo)
-
-	// // Create a channel for completion signals
-	// complete := make(chan bool)
-
-	// // Submit task to the worker pool
-	// workerPool <- struct{}{}
-	// go func() {
-	// 	runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo, complete)
-	// 	<-workerPool // Release the worker slot when completed
-	// }()
-
-	// // Wait for the completion signal
-	// <-complete
 
 	if fileInfo.IsDir() && !isSymbolicLink(fileInfo) {
 		// If it's a directory and not a symbolic link, process its contents
