@@ -43,33 +43,38 @@ var path *string
 var root *string
 var watcher *bool
 var fileCollection *mongo.Collection
+var workerCount = 25
+var workerPool = make(chan struct{}, workerCount)
 
+// init() variables and use the default cinfiguration. Note, the conf.json file must
+// exist in the same directory as the builder executable
 func init() {
 	// Read the configuration file
-
-	config = flag.String("config", "./conf.json", "config file")
-	path = flag.String("path", "/home/delimp/Documents/OPIe", "full path")
-	root = flag.String("root", "/home/delimp/Documents", "root path")
-	watcher = flag.Bool("watcher", false, "watcher")
-}
-
-func main() {
-	flag.Parse()
-
-	configValue := *config
-	pathValue := *path
-	rootValue := *root
-	if rootValue == "" {
-		rootValue = filepath.Dir(pathValue)
-	}
-
-	// Read the configuration file
-	config, err := readConfig(configValue)
+	config, err := readConfig("conf.json")
 	if err != nil {
 		fmt.Printf("Failed to read configuration file: %v\n", err)
 		return
 	}
 
+	path = flag.String("path", config.Path, "full path")
+	root = flag.String("root", config.Root, "root path")
+	watcher = flag.Bool("watcher", false, "watcher")
+}
+
+func main() {
+	flag.Parse()
+	// Read the configuration file
+	config, err := readConfig("conf.json")
+	if err != nil {
+		fmt.Printf("Failed to read configuration file: %v\n", err)
+		return
+	}
+	pathValue := *path
+	rootValue := *root
+	// If root is not passed, we must assume that the path is the root
+	if rootValue == "" {
+		rootValue = pathValue
+	}
 	// Connect to MongoDB
 	collection, err := connectToMongoDB(config.DbType, config.Host, config.Port, config.DbUser, config.DbPwd, config.DbName, config.FileColl)
 	if err != nil {
@@ -112,8 +117,21 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 
 	runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo)
 
-	if fileInfo.IsDir() {
-		// If it's a directory, process its contents
+	// // Create a channel for completion signals
+	// complete := make(chan bool)
+
+	// // Submit task to the worker pool
+	// workerPool <- struct{}{}
+	// go func() {
+	// 	runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo, complete)
+	// 	<-workerPool // Release the worker slot when completed
+	// }()
+
+	// // Wait for the completion signal
+	// <-complete
+
+	if fileInfo.IsDir() && !isSymbolicLink(fileInfo) {
+		// If it's a directory and not a symbolic link, process its contents
 		// Open the directory
 		dir, err := os.Open(pathValue)
 		if err != nil {
@@ -136,7 +154,6 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 			// Process files and directories recursively
 			processPath(collection, entryPath, rootValue, watcherValue)
 		}
-
 	}
 }
 
@@ -149,47 +166,13 @@ func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue strin
 		fmt.Println("Failed to save data to MongoDB: ", err)
 		return err
 	}
+	// complete <- true
 	return nil
 }
 
-// func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
-// 	// Create a channel to receive the data from compileData
-// 	dataChan := make(chan map[string]string, 1)
-
-// 	// Create a channel to receive any errors
-// 	errChan := make(chan error, 1)
-
-// 	// Run compileData in a goroutine
-// 	go func() {
-// 		dataInfo, err := compileData(pathValue, rootValue, fileInfo)
-// 		if err != nil {
-// 			errChan <- err
-// 			return
-// 		}
-// 		// Send the data to the channel
-// 		dataChan <- dataInfo
-// 	}()
-
-// 	// Wait for data or an error from the channels
-// 	select {
-// 	case dataInfo := <-dataChan:
-// 		// Save the directory data to MongoDB
-// 		err := saveDataToDB(collection, dataInfo)
-// 		if err != nil {
-// 			fmt.Println("Failed to save data to MongoDB: ", err)
-// 			return err
-// 		}
-// 	case err := <-errChan:
-// 		fmt.Println("Failed to compile data: ", err)
-// 		return err
-// 	}
-
-// 	return nil
-// }
-
 // Compile directory or file data
 func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]string, error) {
-	if fileInfo.Mode()&os.ModeSymlink != 0 {
+	if isSymbolicLink(fileInfo) {
 		// For symlinks, handle symlink data
 		linkPath, err := os.Readlink(pathValue)
 		if err != nil {
@@ -411,6 +394,11 @@ func computeFileHash(filename string) string {
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// Function to check if a file info represents a symbolic link
+func isSymbolicLink(fileInfo os.FileInfo) bool {
+	return fileInfo.Mode()&os.ModeSymlink != 0
 }
 
 // Flatten nested map data
