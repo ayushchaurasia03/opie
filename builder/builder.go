@@ -112,20 +112,16 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 		return
 	}
 
+	if fileInfo.Mode()&os.ModeSymlink != 0 {
+		processSymlink(collection, pathValue, rootValue, fileInfo)
+		return
+	}
+
 	runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo)
 
 	if fileInfo.IsDir() {
 		// If it's a directory, process its contents
-		// Open the directory
-		dir, err := os.Open(pathValue)
-		if err != nil {
-			fmt.Println("Failed to open directory: ", err)
-			return
-		}
-		defer dir.Close()
-
-		// Read all the directory entries
-		entries, err := dir.Readdir(-1)
+		entries, err := os.ReadDir(pathValue)
 		if err != nil {
 			fmt.Println("Failed to read directory entries: ", err)
 			return
@@ -138,7 +134,49 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 			// Process files and directories recursively
 			processPath(collection, entryPath, rootValue, watcherValue)
 		}
+	}
+}
 
+func processSymlink(collection *mongo.Collection, pathValue, rootValue string, fileInfo os.FileInfo) {
+	linkPath, err := os.Readlink(pathValue)
+	if err != nil {
+		fmt.Println("Failed to get symlink destination: ", err)
+		return
+	}
+
+	linkFileInfo, err := readFileInfo(linkPath)
+	if err != nil {
+		fmt.Printf("Failed to read symlink destination file info: %v\n", err)
+		return
+	}
+
+	symlinkInfo := compileDirectoryData(pathValue, rootValue, fileInfo)
+	symlinkInfo["IsSymLink"] = "true"
+	symlinkInfo["SymlinkDestination"] = linkPath
+
+	err = saveDataToDB(collection, symlinkInfo)
+	if err != nil {
+		fmt.Println("Failed to save symlink directory data to MongoDB: ", err)
+		return
+	}
+
+	if linkFileInfo.IsDir() {
+		return
+	}
+
+	symlinkFileInfo, err := compileFileData(linkPath, rootValue, linkFileInfo)
+	if err != nil {
+		fmt.Println("Failed to compile symlink file data: ", err)
+		return
+	}
+
+	symlinkFileInfo["IsSymLink"] = "true"
+	symlinkFileInfo["SymlinkDestination"] = linkPath
+
+	err = saveDataToDB(collection, symlinkFileInfo)
+	if err != nil {
+		fmt.Println("Failed to save symlink file data to MongoDB: ", err)
+		return
 	}
 }
 
