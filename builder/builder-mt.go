@@ -16,6 +16,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -45,9 +47,8 @@ var watcher *bool
 var fileCollection *mongo.Collection
 var workerCount = 25
 var workerPool = make(chan struct{}, workerCount)
+var counter int
 
-// init() variables and use the default cinfiguration. Note, the conf.json file must
-// exist in the same directory as the builder executable
 func init() {
 	// Read the configuration file
 	config, err := readConfig("conf.json")
@@ -63,29 +64,36 @@ func init() {
 
 func main() {
 	flag.Parse()
-	// Read the configuration file
+
+	startTime := time.Now()
 	config, err := readConfig("conf.json")
 	if err != nil {
-		fmt.Printf("Failed to read configuration file: %v\n", err)
-		return
+		log.Fatalf("Failed to read configuration file: %v", err)
 	}
+
 	pathValue := *path
 	rootValue := *root
 	// If root is not passed, we must assume that the path is the root
 	if rootValue == "" {
 		rootValue = pathValue
 	}
-	// Connect to MongoDB
-	collection, err := connectToMongoDB(config.DbType, config.Host, config.Port, config.DbUser, config.DbPwd, config.DbName, config.FileColl)
-	if err != nil {
-		fmt.Printf("Failed to connect to MongoDB: %v\n", err)
-		return
+
+	if config.MaxGoroutines > 0 {
+		workerCount = config.MaxGoroutines
+		workerPool = make(chan struct{}, workerCount)
 	}
 
-	// Process the path
-	processPath(collection, pathValue, rootValue, *watcher)
+	collection, err := connectToMongoDB(config.DbType, config.Host, config.Port, config.DbUser, config.DbPwd, config.DbName, config.FileColl)
+	if err != nil {
+		log.Fatalf("Failed to connect to MongoDB: %v", err)
+	}
 
-	fmt.Println("Data saved to MongoDB successfully.")
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go processPath(collection, *path, *root, *watcher, wg)
+	wg.Wait() // Wait for all goroutines to finish.
+	elapsedTime := time.Since(startTime)
+	log.Printf("Execution time: %s", elapsedTime)
 }
 
 func readConfig(filename string) (Config, error) {
@@ -107,15 +115,15 @@ func readConfig(filename string) (Config, error) {
 }
 
 // Process the path
-func processPath(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool) {
+func processPath(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	// Get file information once
 	fileInfo, err := readFileInfo(pathValue)
 	if err != nil {
-		fmt.Printf("Failed to read file info: %v\n", err)
+		log.Printf("Failed to read file info: %v\n", err)
 		return
 	}
-
-	// runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo)
 
 	// Create a channel for completion signals
 	complete := make(chan bool)
@@ -123,19 +131,20 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 	// Submit task to the worker pool
 	workerPool <- struct{}{}
 	go func() {
-		runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo, complete)
+		err := runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo)
 		<-workerPool // Release the worker slot when completed
+		if err != nil {
+			log.Printf("Error processing path: %v\n", err)
+		}
+		complete <- true
 	}()
-
-	// Wait for the completion signal
-	<-complete
 
 	if fileInfo.IsDir() && !isSymbolicLink(fileInfo) {
 		// If it's a directory and not a symbolic link, process its contents
 		// Open the directory
 		dir, err := os.Open(pathValue)
 		if err != nil {
-			fmt.Println("Failed to open directory: ", err)
+			log.Printf("Failed to open directory: %v\n", err)
 			return
 		}
 		defer dir.Close()
@@ -143,30 +152,36 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 		// Read all the directory entries
 		entries, err := dir.Readdir(-1)
 		if err != nil {
-			fmt.Println("Failed to read directory entries: ", err)
+			log.Printf("Failed to read directory entries: %v\n", err)
 			return
 		}
 
 		// Loop over the directory entries and process each one
 		for _, entry := range entries {
 			entryPath := filepath.Join(pathValue, entry.Name())
-
-			// Process files and directories recursively
-			processPath(collection, entryPath, rootValue, watcherValue)
+			wg.Add(1)
+			go processPath(collection, entryPath, rootValue, watcherValue, wg)
 		}
 	}
+
+	// Wait for the completion signal
+	<-complete
 }
 
-// // Determine file type and do both compileXData and saveDataToDB
-func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo, complete chan<- bool) error {
+// Determine file type and do both compileData and saveDataToDB
+func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
+	goroutineNumber := incrementCounter()
+	fmt.Printf("Goroutine %d started\n", goroutineNumber)
 	dataInfo, err := compileData(pathValue, rootValue, fileInfo)
-	// Save the directory data to MongoDB
-	err = saveDataToDB(collection, dataInfo)
 	if err != nil {
-		fmt.Println("Failed to save data to MongoDB: ", err)
 		return err
 	}
-	complete <- true
+
+	err = saveDataToDB(collection, dataInfo)
+	if err != nil {
+		return fmt.Errorf("failed to save data to MongoDB: %v", err)
+	}
+
 	return nil
 }
 
@@ -450,4 +465,9 @@ func flattenSlice(result map[string]string, prefix string, v reflect.Value) {
 	for i := 0; i < v.Len(); i++ {
 		flatten(result, fmt.Sprintf("%s%d", prefix, i), v.Index(i))
 	}
+}
+
+func incrementCounter() int {
+	counter++
+	return counter
 }
