@@ -47,7 +47,6 @@ var watcher *bool
 var fileCollection *mongo.Collection
 var workerCount = 25
 var workerPool = make(chan struct{}, workerCount)
-var counter int
 
 func init() {
 	// Read the configuration file
@@ -170,8 +169,6 @@ func processPath(collection *mongo.Collection, pathValue, rootValue string, watc
 
 // Determine file type and do both compileData and saveDataToDB
 func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
-	goroutineNumber := incrementCounter()
-	fmt.Printf("Goroutine %d started\n", goroutineNumber)
 	dataInfo, err := compileData(pathValue, rootValue, fileInfo)
 	if err != nil {
 		return err
@@ -465,9 +462,4 @@ func flattenSlice(result map[string]string, prefix string, v reflect.Value) {
 	for i := 0; i < v.Len(); i++ {
 		flatten(result, fmt.Sprintf("%s%d", prefix, i), v.Index(i))
 	}
-}
-
-func incrementCounter() int {
-	counter++
-	return counter
 }
