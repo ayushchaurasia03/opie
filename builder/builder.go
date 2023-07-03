@@ -16,6 +16,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -38,10 +40,13 @@ type Config struct {
 	Path          string   `json:"path"`
 }
 
+var config *string
 var path *string
 var root *string
 var watcher *bool
 var fileCollection *mongo.Collection
+var workerCount = 25
+var workerPool = make(chan struct{}, workerCount)
 
 func init() {
 	// Read the configuration file
@@ -59,30 +64,35 @@ func init() {
 func main() {
 	flag.Parse()
 
-	// Read the configuration file
+	startTime := time.Now()
 	config, err := readConfig("conf.json")
 	if err != nil {
-		fmt.Printf("Failed to read configuration file: %v\n", err)
-		return
+		log.Fatalf("Failed to read configuration file: %v", err)
 	}
 
 	pathValue := *path
 	rootValue := *root
+	// If root is not passed, we must assume that the path is the root
 	if rootValue == "" {
-		rootValue = filepath.Dir(pathValue)
+		rootValue = pathValue
 	}
 
-	// Connect to MongoDB
+	if config.MaxGoroutines > 0 {
+		workerCount = config.MaxGoroutines
+		workerPool = make(chan struct{}, workerCount)
+	}
+
 	collection, err := connectToMongoDB(config.DbType, config.Host, config.Port, config.DbUser, config.DbPwd, config.DbName, config.FileColl)
 	if err != nil {
-		fmt.Printf("Failed to connect to MongoDB: %v\n", err)
-		return
+		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
 
-	// Process the path
-	processPath(collection, pathValue, rootValue, *watcher)
-
-	fmt.Println("Data saved to MongoDB successfully.")
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go processPath(collection, *path, *root, *watcher, wg)
+	wg.Wait() // Wait for all goroutines to finish.
+	elapsedTime := time.Since(startTime)
+	log.Printf("Execution time: %s", elapsedTime)
 }
 
 func readConfig(filename string) (Config, error) {
@@ -104,255 +114,161 @@ func readConfig(filename string) (Config, error) {
 }
 
 // Process the path
-func processPath(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool) {
+func processPath(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	// Get file information once
 	fileInfo, err := readFileInfo(pathValue)
 	if err != nil {
-		fmt.Printf("Failed to read file info: %v\n", err)
+		log.Printf("Failed to read file info: %v\n", err)
 		return
 	}
 
-	if fileInfo.Mode()&os.ModeSymlink != 0 {
-		processSymlink(collection, pathValue, rootValue, fileInfo)
-		return
-	}
+	// Create a channel for completion signals
+	complete := make(chan bool)
 
-	runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo)
-
-	if fileInfo.IsDir() {
-		// If it's a directory, process its contents
-		entries, err := os.ReadDir(pathValue)
+	// Submit task to the worker pool
+	workerPool <- struct{}{}
+	go func() {
+		err := runCompileAndWrite(collection, pathValue, rootValue, watcherValue, fileInfo)
+		<-workerPool // Release the worker slot when completed
 		if err != nil {
-			fmt.Println("Failed to read directory entries: ", err)
+			log.Printf("Error processing path: %v\n", err)
+		}
+		complete <- true
+	}()
+
+	if fileInfo.IsDir() && !isSymbolicLink(fileInfo) {
+		// If it's a directory and not a symbolic link, process its contents
+		// Open the directory
+		dir, err := os.Open(pathValue)
+		if err != nil {
+			log.Printf("Failed to open directory: %v\n", err)
+			return
+		}
+		defer dir.Close()
+
+		// Read all the directory entries
+		entries, err := dir.Readdir(-1)
+		if err != nil {
+			log.Printf("Failed to read directory entries: %v\n", err)
 			return
 		}
 
 		// Loop over the directory entries and process each one
 		for _, entry := range entries {
 			entryPath := filepath.Join(pathValue, entry.Name())
-
-			// Process files and directories recursively
-			processPath(collection, entryPath, rootValue, watcherValue)
+			wg.Add(1)
+			go processPath(collection, entryPath, rootValue, watcherValue, wg)
 		}
 	}
+
+	// Wait for the completion signal
+	<-complete
 }
 
-func processSymlink(collection *mongo.Collection, pathValue, rootValue string, fileInfo os.FileInfo) {
-	linkPath, err := os.Readlink(pathValue)
-	if err != nil {
-		fmt.Println("Failed to get symlink destination: ", err)
-		return
-	}
-
-	linkFileInfo, err := readFileInfo(linkPath)
-	if err != nil {
-		fmt.Printf("Failed to read symlink destination file info: %v\n", err)
-		return
-	}
-
-	symlinkInfo := compileDirectoryData(pathValue, rootValue, fileInfo)
-	symlinkInfo["IsSymLink"] = "true"
-	symlinkInfo["SymlinkDestination"] = linkPath
-
-	err = saveDataToDB(collection, symlinkInfo)
-	if err != nil {
-		fmt.Println("Failed to save symlink directory data to MongoDB: ", err)
-		return
-	}
-
-	if linkFileInfo.IsDir() {
-		return
-	}
-
-	symlinkFileInfo, err := compileFileData(linkPath, rootValue, linkFileInfo)
-	if err != nil {
-		fmt.Println("Failed to compile symlink file data: ", err)
-		return
-	}
-
-	symlinkFileInfo["IsSymLink"] = "true"
-	symlinkFileInfo["SymlinkDestination"] = linkPath
-
-	err = saveDataToDB(collection, symlinkFileInfo)
-	if err != nil {
-		fmt.Println("Failed to save symlink file data to MongoDB: ", err)
-		return
-	}
-}
-
-// Read a file's info using lstat
-func readFileInfo(filePath string) (os.FileInfo, error) {
-	fileInfo, err := os.Lstat(filePath)
-	if err != nil {
-		return nil, err
-	}
-	return fileInfo, nil
-}
-
-// Determine file type and do both compileXData and saveDataToDB
+// Determine file type and do both compileData and saveDataToDB
 func runCompileAndWrite(collection *mongo.Collection, pathValue, rootValue string, watcherValue bool, fileInfo os.FileInfo) error {
-	if fileInfo.IsDir() {
-		dirInfo := compileDirectoryData(pathValue, rootValue, fileInfo)
-		// Save the directory data to MongoDB
-		err := saveDataToDB(collection, dirInfo)
-		if err != nil {
-			fmt.Println("Failed to save data to MongoDB: ", err)
-			return err
-		}
-	} else {
-		// If the path is a file, process it
-		fileData, err := compileFileData(pathValue, rootValue, fileInfo)
-		if err != nil {
-			fmt.Println("Failed to compile file data: ", err)
-			return err
-		}
-		// Save the file data to MongoDB
-		err = saveDataToDB(collection, fileData)
-		if err != nil {
-			fmt.Println("Failed to save data to MongoDB: ", err)
-			return err
-		}
+	dataInfo, err := compileData(pathValue, rootValue, fileInfo)
+	if err != nil {
+		return err
 	}
+
+	err = saveDataToDB(collection, dataInfo)
+	if err != nil {
+		return fmt.Errorf("failed to save data to MongoDB: %v", err)
+	}
+
 	return nil
 }
 
-// Compile directory data
-func compileDirectoryData(pathValue, rootValue string, fileInfo os.FileInfo) map[string]string {
-	// Structure the file information
-	sourceFile := pathValue
-	directoryName := filepath.Dir(sourceFile)
-	fileName := fileInfo.Name()
-	size := fileInfo.Size()
-	sizeString := strconv.FormatInt(size, 10)
-	mode := fileInfo.Mode()
-	modeString := mode.String()
-	modTime := fileInfo.ModTime()
-	modTimeString := modTime.Format("2006-01-02 15:04:05")
-	sourcePathHash := computeStringHash(sourceFile)
-	directoryHash := computeStringHash(directoryName)
-	ancestorPaths := ancestryPaths(pathValue, rootValue)
-	ancestorPathsString := strings.Join(ancestorPaths, ", ")
-	ancestorPathHashes := ancestryPathHashes(ancestorPaths)
-	uuid := sourcePathHash + ":" + directoryHash
-
-	dirInfo := map[string]string{
-		"_id":                uuid,
-		"SourceFile":         sourceFile,
-		"DirectoryName":      directoryName,
-		"FileName":           fileName,
-		"FileSizeRaw":        sizeString,
-		"FileMode":           modeString,
-		"FileModTime":        modTimeString,
-		"SourcePathHash":     sourcePathHash,
-		"DirectoryHash":      directoryHash,
-		"AncestryPaths":      ancestorPathsString,
-		"AncestryPathHashes": strings.Join(ancestorPathHashes, ", "),
-		"IsDirectory":        "true",
-	}
-	return dirInfo
-}
-
-// Read a file's exif data and then flatten it using the flatten function
-func readExifData(filePath string) (map[string]string, error) {
-	cmd := exec.Command("exiftool", "-j", filePath)
-	stdout, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	var data []map[string]interface{}
-	if err := json.Unmarshal(stdout, &data); err != nil {
-		// Handle the case when the file has no EXIF data
-		emptyData := make(map[string]string)
-		return emptyData, nil
-	}
-	result := make(map[string]string)
-	for k, v := range data[0] {
-		flatten(result, k, reflect.ValueOf(v))
-	}
-	return result, nil
-}
-
-// Compile file data
-func compileFileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]string, error) {
-	// Read file's exif data using exiftool
-	exifData, err := readExifData(pathValue)
-	if err != nil {
-		exifData, err = compileFileDataNoExif(pathValue, rootValue, fileInfo)
+// Compile directory or file data
+func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]string, error) {
+	if isSymbolicLink(fileInfo) {
+		// For symlinks, handle symlink data
+		linkPath, err := os.Readlink(pathValue)
 		if err != nil {
-			fmt.Println("Failed to read exif data: ", err)
 			return nil, err
 		}
+		symlinkIsDir := ""
+		if fileInfo.IsDir() {
+			symlinkIsDir = "true"
+		} else {
+			symlinkIsDir = "false"
+		}
+
+		symlinkInfo := map[string]string{
+			"_id":                computeStringHash(pathValue),
+			"SourceFile":         pathValue,
+			"DirectoryName":      filepath.Dir(pathValue),
+			"FileName":           fileInfo.Name(),
+			"FileSizeRaw":        strconv.FormatInt(fileInfo.Size(), 10),
+			"FileMode":           fileInfo.Mode().String(),
+			"FileModTime":        fileInfo.ModTime().Format("2006-01-02 15:04:05"),
+			"SourcePathHash":     computeStringHash(pathValue),
+			"DirectoryHash":      computeStringHash(filepath.Dir(pathValue)),
+			"AncestryPaths":      strings.Join(ancestryPaths(pathValue, rootValue), ", "),
+			"AncestryPathHashes": strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", "),
+			"IsDirectory":        symlinkIsDir,
+			"IsSymLink":          "true",
+			"SymlinkDestination": linkPath,
+		}
+		return symlinkInfo, nil
+	} else if fileInfo.IsDir() {
+		// For directories, compile directory data
+		dirInfo := map[string]string{
+			"_id":                computeStringHash(pathValue),
+			"SourceFile":         pathValue,
+			"DirectoryName":      filepath.Dir(pathValue),
+			"FileName":           fileInfo.Name(),
+			"FileSizeRaw":        strconv.FormatInt(fileInfo.Size(), 10),
+			"FileMode":           fileInfo.Mode().String(),
+			"FileModTime":        fileInfo.ModTime().Format("2006-01-02 15:04:05"),
+			"SourcePathHash":     computeStringHash(pathValue),
+			"DirectoryHash":      computeStringHash(filepath.Dir(pathValue)),
+			"AncestryPaths":      strings.Join(ancestryPaths(pathValue, rootValue), ", "),
+			"AncestryPathHashes": strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", "),
+			"IsDirectory":        "true",
+		}
+		return dirInfo, nil
+	} else {
+		// For files, compile file data
+		exifData, err := readExifData(pathValue)
+		if err != nil {
+			// If exif data is not available, compile data without exif
+			fileInfo := map[string]string{
+				"_id":                computeStringHash(pathValue),
+				"SourceFile":         pathValue,
+				"DirectoryName":      filepath.Dir(pathValue),
+				"FileName":           fileInfo.Name(),
+				"FileSizeRaw":        strconv.FormatInt(fileInfo.Size(), 10),
+				"FileMode":           fileInfo.Mode().String(),
+				"FileModTime":        fileInfo.ModTime().Format("2006-01-02 15:04:05"),
+				"IsDirectory":        "false",
+				"SourcePathHash":     computeStringHash(pathValue),
+				"DirectoryHash":      computeStringHash(filepath.Dir(pathValue)),
+				"AncestryPaths":      strings.Join(ancestryPaths(pathValue, rootValue), ", "),
+				"AncestryPathHashes": strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", "),
+				"FileHash":           computeFileHash(pathValue),
+			}
+			return fileInfo, nil
+		}
+
+		// Add additional file information to exif data
+		exifData["_id"] = computeStringHash(pathValue)
+		exifData["SourcePathHash"] = computeStringHash(pathValue)
+		exifData["DirectoryHash"] = computeStringHash(filepath.Dir(pathValue))
+		exifData["FileHash"] = computeFileHash(pathValue)
+		exifData["FileSizeRaw"] = strconv.FormatInt(fileInfo.Size(), 10)
+		exifData["FileMode"] = fileInfo.Mode().String()
+		exifData["FileModTime"] = fileInfo.ModTime().Format("2006-01-02 15:04:05")
+		exifData["AncestryPaths"] = strings.Join(ancestryPaths(pathValue, rootValue), ", ")
+		exifData["AncestryPathHashes"] = strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", ")
+		exifData["FileTypeExtension"] = filepath.Ext(fileInfo.Name())
+		exifData["IsDirectory"] = "false"
+
+		return exifData, nil
 	}
-
-	// Add file information not returned by exiftool
-	sourcePathHash := computeStringHash(pathValue)
-	directoryName := filepath.Dir(pathValue)
-	directoryHash := computeStringHash(directoryName)
-	fileHash := computeFileHash(pathValue)
-	fsName := fileInfo.Name()
-	fsExtension := filepath.Ext(fsName)
-	size := fileInfo.Size()
-	sizeString := strconv.FormatInt(size, 10)
-	mode := fileInfo.Mode()
-	modeString := mode.String()
-	modTime := fileInfo.ModTime()
-	modTimeString := modTime.Format("2006-01-02 15:04:05")
-	ancestorPaths := ancestryPaths(pathValue, rootValue)
-	ancestorPathsString := strings.Join(ancestorPaths, ", ")
-	ancestorPathHashes := ancestryPathHashes(ancestorPaths)
-	uuid := sourcePathHash + ":" + fileHash
-
-	exifData["_id"] = uuid
-	exifData["SourcePathHash"] = sourcePathHash
-	exifData["DirectoryHash"] = directoryHash
-	exifData["FileHash"] = fileHash
-	exifData["FileSizeRaw"] = sizeString
-	exifData["FileMode"] = modeString
-	exifData["FileModTime"] = modTimeString
-	exifData["AncestryPaths"] = ancestorPathsString
-	exifData["AncestryPathHashes"] = strings.Join(ancestorPathHashes, ", ")
-	exifData["FileTypeExtension"] = fsExtension
-	exifData["IsDirectory"] = "false"
-
-	return exifData, nil
-}
-
-// Compile file data from files that return no exif data
-func compileFileDataNoExif(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]string, error) {
-	// Structure the file information
-	sourceFile := pathValue
-	directoryName := filepath.Dir(sourceFile)
-	fileName := fileInfo.Name()
-	size := fileInfo.Size()
-	sizeString := strconv.FormatInt(size, 10)
-	mode := fileInfo.Mode()
-	modeString := mode.String()
-	modTime := fileInfo.ModTime()
-	modTimeString := modTime.Format("2006-01-02 15:04:05")
-	sourcePathHash := computeStringHash(sourceFile)
-	directoryHash := computeStringHash(directoryName)
-	ancestorPaths := ancestryPaths(pathValue, rootValue)
-	ancestorPathsString := strings.Join(ancestorPaths, ", ")
-	ancestorPathHashes := ancestryPathHashes(ancestorPaths)
-	fileHash := computeFileHash(pathValue)
-	uuid := sourcePathHash + ":" + fileHash
-
-	result := map[string]string{
-		"_id":                uuid,
-		"SourceFile":         sourceFile,
-		"DirectoryName":      directoryName,
-		"FileName":           fileName,
-		"FileSizeRaw":        sizeString,
-		"FileMode":           modeString,
-		"FileModTime":        modTimeString,
-		"IsDirectory":        "false",
-		"SourcePathHash":     sourcePathHash,
-		"DirectoryHash":      directoryHash,
-		"AncestryPaths":      ancestorPathsString,
-		"AncestryPathHashes": strings.Join(ancestorPathHashes, ", "),
-		"FileHash":           fileHash,
-	}
-	return result, nil
 }
 
 // DATABASE FUNCTIONS
@@ -410,6 +326,36 @@ func saveDataToDB(collection *mongo.Collection, data map[string]string) error {
 }
 
 // UTILITY FUNCTIONS
+
+// Read a file's info using lstat
+func readFileInfo(filePath string) (os.FileInfo, error) {
+	fileInfo, err := os.Lstat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	return fileInfo, nil
+}
+
+// Read a file's exif data and then flatten it using the flatten function
+func readExifData(filePath string) (map[string]string, error) {
+	cmd := exec.Command("exiftool", "-j", filePath)
+	stdout, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var data []map[string]interface{}
+	if err := json.Unmarshal(stdout, &data); err != nil {
+		// Handle the case when the file has no EXIF data
+		emptyData := make(map[string]string)
+		return emptyData, nil
+	}
+	result := make(map[string]string)
+	for k, v := range data[0] {
+		flatten(result, k, reflect.ValueOf(v))
+	}
+	return result, nil
+}
+
 // Compute the sha1 hash of a string
 func computeStringHash(input string) string {
 	hash := sha1.New()
@@ -460,6 +406,11 @@ func computeFileHash(filename string) string {
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// Function to check if a file info represents a symbolic link
+func isSymbolicLink(fileInfo os.FileInfo) bool {
+	return fileInfo.Mode()&os.ModeSymlink != 0
 }
 
 // Flatten nested map data
