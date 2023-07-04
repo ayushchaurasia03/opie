@@ -45,7 +45,7 @@ var path *string
 var root *string
 var watcher *bool
 var fileCollection *mongo.Collection
-var workerCount = 25
+var workerCount = 0
 var workerPool = make(chan struct{}, workerCount)
 
 func init() {
@@ -59,6 +59,10 @@ func init() {
 	path = flag.String("path", config.Path, "full path")
 	root = flag.String("root", config.Root, "root path")
 	watcher = flag.Bool("watcher", false, "watcher")
+
+	// Update the workerCount value
+	workerCount = config.MaxGoroutines
+	workerPool = make(chan struct{}, workerCount)
 }
 
 func main() {
@@ -80,6 +84,7 @@ func main() {
 	if config.MaxGoroutines > 0 {
 		workerCount = config.MaxGoroutines
 		workerPool = make(chan struct{}, workerCount)
+		fmt.Println(workerCount, "work")
 	}
 
 	collection, err := connectToMongoDB(config.DbType, config.Host, config.Port, config.DbUser, config.DbPwd, config.DbName, config.FileColl)
