@@ -1,0 +1,23 @@
+{
+    "DbType": "mongodb",
+    "Host": "localhost",
+    "Port": "27017",
+    "DbUser": "admin",
+    "DbPwd": "password",
+    "DbName": "sopie",
+    "FileColl": "config-optimize",
+    "TreeColl": "trees",
+    "maxGoroutines": 25,
+    "NoExif": [
+      "dmg",
+      "app",
+      "json"
+    ],
+    "Watcher": [
+      "/home/delimp/Documents/OPIe",
+      "/home/delimp/Documents/project-phi",
+      "/home/delimp/Downloads"
+    ],
+    "root":"/home/delimp/Documents",
+    "path":"/home/delimp/Documents/OPIe"
+  }
