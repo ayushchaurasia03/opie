@@ -7,7 +7,7 @@
     "DbName": "sopie",
     "FileColl": "config-optimize",
     "TreeColl": "trees",
-    "maxGoroutines": 50,
+    "maxGoroutines": 100,
     "NoExif": [
       "dmg",
       "app",
