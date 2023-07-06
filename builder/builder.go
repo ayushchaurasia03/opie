@@ -203,7 +203,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 		}
 
 		symlinkInfo := map[string]string{
-			"_id":                computeStringHash(filepath.Dir(pathValue)) + ":" + computeStringHash(pathValue),
+			"_id":                computeStringHash(pathValue) + ":" + computeStringHash(filepath.Dir(pathValue)),
 			"SourceFile":         pathValue,
 			"DirectoryName":      filepath.Dir(pathValue),
 			"FileName":           fileInfo.Name(),
@@ -222,7 +222,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 	} else if fileInfo.IsDir() {
 		// For directories, compile directory data
 		dirInfo := map[string]string{
-			"_id":                computeStringHash(filepath.Dir(pathValue)) + ":" + computeStringHash(pathValue),
+			"_id":                computeStringHash(pathValue) + ":" + computeStringHash(filepath.Dir(pathValue)),
 			"SourceFile":         pathValue,
 			"DirectoryName":      filepath.Dir(pathValue),
 			"FileName":           fileInfo.Name(),
@@ -250,8 +250,9 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 		exifData, err := readExifData(pathValue)
 		if err != nil {
 			// If exif data is not available, compile data without exif
+			fileHash := computeFileHash(pathValue)
 			fileInfo := map[string]string{
-				"_id":                computeStringHash(filepath.Dir(pathValue)) + ":" + computeStringHash(pathValue),
+				"_id":                computeStringHash(pathValue) + ":" + fileHash,
 				"SourceFile":         pathValue,
 				"DirectoryName":      filepath.Dir(pathValue),
 				"FileName":           fileInfo.Name(),
@@ -263,13 +264,14 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 				"DirectoryHash":      computeStringHash(filepath.Dir(pathValue)),
 				"AncestryPaths":      strings.Join(ancestryPaths(pathValue, rootValue), ", "),
 				"AncestryPathHashes": strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", "),
-				"FileHash":           computeFileHash(pathValue),
+				"FileHash":           fileHash,
 			}
 			return fileInfo, nil
 		}
 
 		// Add additional file information to exif data
-		exifData["_id"] = computeStringHash(filepath.Dir(pathValue)) + ":" + computeStringHash(pathValue)
+		fileHash := computeFileHash(pathValue)
+		exifData["_id"] = computeStringHash(pathValue) + ":" + fileHash
 		exifData["SourcePathHash"] = computeStringHash(pathValue)
 		exifData["DirectoryHash"] = computeStringHash(filepath.Dir(pathValue))
 		exifData["FileHash"] = computeFileHash(pathValue)
