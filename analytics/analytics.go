@@ -2,12 +2,43 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+var config *string
+var targetName *string
+var fieldName *string
+var substring *string
+var fileCollection *mongo.Collection
+var workerCount = 0
+var workerPool = make(chan struct{}, workerCount)
+
+func main() {
+	flag.Parse()
+}
+
+func init() {
+	// Read the configuration file
+	config, err := readConfig("conf.json")
+	if err != nil {
+		fmt.Printf("Failed to read configuration file: %v\n", err)
+		return
+	}
+
+	targetName = flag.String("targetName", "", "The _id of the target document")
+	fieldName = flag.String("fieldName", "", "The fieldname of the target field")
+	substring = flag.String("root", "", "The substring to search for")
+
+	// Update the workerCount value
+	workerCount = config.MaxGoroutines
+	workerPool = make(chan struct{}, workerCount)
+}
 
 func countDocumentsWithSubstring(fieldName, substring string) int64 {
 	// Set up MongoDB client
@@ -32,6 +63,7 @@ func countDocumentsWithSubstring(fieldName, substring string) int64 {
 
 	return count
 }
+
 func sumFieldWithSubstring(fieldName, substring string) (float64, error) {
 	// Set up MongoDB client
 	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
