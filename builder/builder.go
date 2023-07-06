@@ -203,7 +203,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 		}
 
 		symlinkInfo := map[string]string{
-			"_id":                computeStringHash(pathValue),
+			"_id":                computeStringHash(filepath.Dir(pathValue)) + ":" + computeStringHash(pathValue),
 			"SourceFile":         pathValue,
 			"DirectoryName":      filepath.Dir(pathValue),
 			"FileName":           fileInfo.Name(),
@@ -222,7 +222,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 	} else if fileInfo.IsDir() {
 		// For directories, compile directory data
 		dirInfo := map[string]string{
-			"_id":                computeStringHash(pathValue),
+			"_id":                computeStringHash(filepath.Dir(pathValue)) + ":" + computeStringHash(pathValue),
 			"SourceFile":         pathValue,
 			"DirectoryName":      filepath.Dir(pathValue),
 			"FileName":           fileInfo.Name(),
@@ -242,7 +242,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 		if err != nil {
 			// If exif data is not available, compile data without exif
 			fileInfo := map[string]string{
-				"_id":                computeStringHash(pathValue),
+				"_id":                computeStringHash(filepath.Dir(pathValue)) + ":" + computeStringHash(pathValue),
 				"SourceFile":         pathValue,
 				"DirectoryName":      filepath.Dir(pathValue),
 				"FileName":           fileInfo.Name(),
@@ -260,7 +260,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 		}
 
 		// Add additional file information to exif data
-		exifData["_id"] = computeStringHash(pathValue)
+		exifData["_id"] = computeStringHash(filepath.Dir(pathValue)) + ":" + computeStringHash(pathValue)
 		exifData["SourcePathHash"] = computeStringHash(pathValue)
 		exifData["DirectoryHash"] = computeStringHash(filepath.Dir(pathValue))
 		exifData["FileHash"] = computeFileHash(pathValue)
@@ -306,11 +306,14 @@ func connectToMongoDB(dbType, host, port, dbUser, dbPwd, dbName, collectionName 
 
 // Save data to MongoDB
 func saveDataToDB(collection *mongo.Collection, data map[string]string) error {
-	// Convert the data map to BSON
+	fmt.Println("Saving the following data to the database:")
 	doc := bson.M{}
-	for k, v := range data {
-		doc[k] = v
+	for key, value := range data {
+		fmt.Printf("%s: %s\n", key, value)
+		doc[key] = value
 	}
+	fmt.Println("DOC======\n", doc)
+	fmt.Println("\nDatatattata\n", data)
 
 	// Set the filter to check if the document with the given _id already exists
 	filter := bson.M{"_id": doc["_id"]}
