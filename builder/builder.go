@@ -317,14 +317,14 @@ func connectToMongoDB(dbType, host, port, dbUser, dbPwd, dbName, collectionName 
 
 // Save data to MongoDB
 func saveDataToDB(collection *mongo.Collection, data map[string]string) error {
-	fmt.Println("Saving the following data to the database:")
+	// fmt.Println("Saving the following data to the database:")
 	doc := bson.M{}
 	for key, value := range data {
-		fmt.Printf("%s: %s\n", key, value)
+		// fmt.Printf("%s: %s\n", key, value)
 		doc[key] = value
 	}
-	fmt.Println("DOC======\n", doc)
-	fmt.Println("\nDatatattata\n", data)
+	// fmt.Println("DOC======\n", doc)
+	// fmt.Println("\nDatatattata\n", data)
 
 	// Set the filter to check if the document with the given _id already exists
 	filter := bson.M{"_id": doc["_id"]}
