@@ -31,9 +31,9 @@ func init() {
 		return
 	}
 
-	targetName = flag.String("targetName", "", "The _id of the target document")
+	// targetName = flag.String("targetName", "", "The _id of the target document")
 	fieldName = flag.String("fieldName", "", "The fieldname of the target field")
-	substring = flag.String("root", "", "The substring to search for")
+	substring = flag.String("substring", "", "The substring to search for")
 
 	// Update the workerCount value
 	workerCount = config.MaxGoroutines
