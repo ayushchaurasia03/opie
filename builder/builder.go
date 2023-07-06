@@ -235,6 +235,15 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 			"AncestryPathHashes": strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", "),
 			"IsDirectory":        "true",
 		}
+		childDirs, childFiles, childSize, descendantDirs, descendantFiles, descendantSize := calculateCountsAndSizes(pathValue)
+
+		dirInfo["ChildDirectoryCount"] = strconv.Itoa(childDirs)
+		dirInfo["ChildFileCount"] = strconv.Itoa(childFiles)
+		dirInfo["ChildSizeRaw"] = strconv.FormatInt(childSize, 10)
+		dirInfo["DescendentDirectoryCount"] = strconv.Itoa(descendantDirs)
+		dirInfo["DescendentFileCount"] = strconv.Itoa(descendantFiles)
+		dirInfo["DescendentSizeRaw"] = strconv.FormatInt(descendantSize, 10)
+
 		return dirInfo, nil
 	} else {
 		// For files, compile file data
@@ -470,4 +479,53 @@ func flattenSlice(result map[string]string, prefix string, v reflect.Value) {
 	for i := 0; i < v.Len(); i++ {
 		flatten(result, fmt.Sprintf("%s%d", prefix, i), v.Index(i))
 	}
+}
+
+// Calculate child and descendant counts and sizes
+func calculateCountsAndSizes(path string) (int, int, int64, int, int, int64) {
+	childDirs := 0
+	childFiles := 0
+	childSize := int64(0)
+	descendantDirs := 0
+	descendantFiles := 0
+	descendantSize := int64(0)
+
+	// Open the directory
+	dir, err := os.Open(path)
+	if err != nil {
+		log.Printf("Failed to open directory: %v\n", err)
+		return childDirs, childFiles, childSize, descendantDirs, descendantFiles, descendantSize
+	}
+	defer dir.Close()
+
+	// Read all the directory entries
+	entries, err := dir.Readdir(-1)
+	if err != nil {
+		log.Printf("Failed to read directory entries: %v\n", err)
+		return childDirs, childFiles, childSize, descendantDirs, descendantFiles, descendantSize
+	}
+
+	for _, entry := range entries {
+		entryPath := filepath.Join(path, entry.Name())
+
+		if entry.IsDir() {
+			childDirs++
+			descendantDirs++
+			// Recursively calculate counts and sizes for subdirectories
+			subChildDirs, subChildFiles, subChildSize, subDescendantDirs, subDescendantFiles, subDescendantSize := calculateCountsAndSizes(entryPath)
+			childDirs += subChildDirs
+			childFiles += subChildFiles
+			childSize += subChildSize
+			descendantDirs += subDescendantDirs
+			descendantFiles += subDescendantFiles
+			descendantSize += subDescendantSize
+		} else {
+			childFiles++
+			childSize += entry.Size()
+			descendantFiles++
+			descendantSize += entry.Size()
+		}
+	}
+
+	return childDirs, childFiles, childSize, descendantDirs, descendantFiles, descendantSize
 }
