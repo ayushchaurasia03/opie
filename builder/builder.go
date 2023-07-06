@@ -203,7 +203,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 		}
 
 		symlinkInfo := map[string]string{
-			"_id":                computeStringHash(pathValue) + ":" + computeStringHash(filepath.Dir(pathValue)),
+			"_id":                computeStringHash(pathValue) + ":" + computeStringHash(time.Now().Format("2006-01-02 15:04:05")),
 			"SourceFile":         pathValue,
 			"DirectoryName":      filepath.Dir(pathValue),
 			"FileName":           fileInfo.Name(),
@@ -214,6 +214,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 			"DirectoryHash":      computeStringHash(filepath.Dir(pathValue)),
 			"AncestryPaths":      strings.Join(ancestryPaths(pathValue, rootValue), ", "),
 			"AncestryPathHashes": strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", "),
+			"IndexTime":          time.Now().Format("2006-01-02 15:04:05"),
 			"IsDirectory":        symlinkIsDir,
 			"IsSymLink":          "true",
 			"SymlinkDestination": linkPath,
@@ -222,7 +223,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 	} else if fileInfo.IsDir() {
 		// For directories, compile directory data
 		dirInfo := map[string]string{
-			"_id":                computeStringHash(pathValue) + ":" + computeStringHash(filepath.Dir(pathValue)),
+			"_id":                computeStringHash(pathValue) + ":" + computeStringHash(time.Now().Format("2006-01-02 15:04:05")),
 			"SourceFile":         pathValue,
 			"DirectoryName":      filepath.Dir(pathValue),
 			"FileName":           fileInfo.Name(),
@@ -233,6 +234,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 			"DirectoryHash":      computeStringHash(filepath.Dir(pathValue)),
 			"AncestryPaths":      strings.Join(ancestryPaths(pathValue, rootValue), ", "),
 			"AncestryPathHashes": strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", "),
+			"IndexTime":          time.Now().Format("2006-01-02 15:04:05"),
 			"IsDirectory":        "true",
 		}
 		childDirs, childFiles, childSize, descendantDirs, descendantFiles, descendantSize := calculateCountsAndSizes(pathValue)
@@ -259,6 +261,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 				"FileSizeRaw":        strconv.FormatInt(fileInfo.Size(), 10),
 				"FileMode":           fileInfo.Mode().String(),
 				"FileModTime":        fileInfo.ModTime().Format("2006-01-02 15:04:05"),
+				"IndexTime":          time.Now().Format("2006-01-02 15:04:05"),
 				"IsDirectory":        "false",
 				"SourcePathHash":     computeStringHash(pathValue),
 				"DirectoryHash":      computeStringHash(filepath.Dir(pathValue)),
@@ -282,6 +285,7 @@ func compileData(pathValue, rootValue string, fileInfo os.FileInfo) (map[string]
 		exifData["AncestryPathHashes"] = strings.Join(ancestryPathHashes(ancestryPaths(pathValue, rootValue)), ", ")
 		exifData["FileTypeExtension"] = filepath.Ext(fileInfo.Name())
 		exifData["IsDirectory"] = "false"
+		exifData["IndexTime"] = time.Now().Format("2006-01-02 15:04:05")
 
 		return exifData, nil
 	}
